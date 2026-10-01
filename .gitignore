@@ -46,3 +46,21 @@ go.work.sum
 
 # 图标资源生成过程中的临时文件
 *.syso.off
+
+# Node 依赖（本项目前端零依赖、无构建步骤；防止有人 npm install 后误提交）
+node_modules/
+
+# 本地密钥/凭据类文件的兜底规则（正常用不到，多一层保险）
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+settings.local.json
+
+# 操作系统与编辑器垃圾文件
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
