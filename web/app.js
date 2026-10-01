@@ -1,12 +1,107 @@
 /* ==========================================================================
- * 灵感管理器 · 前端逻辑（原生 JS，无构建步骤）
+ * Inspirationer · front-end logic (vanilla JS, no build step)
+ *
+ * UI text lives in web/i18n.js; this file only refers to translation keys.
  * ========================================================================== */
 'use strict';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
-/* ------------------------------------------------------------------ 状态 */
+/* ------------------------------------------------------------------ i18n */
+const LANG_STORAGE = 'inspirationer.lang';
+
+// Supported UI languages; 'auto' follows the browser and resolves to one of these.
+const SUPPORTED_LANGS = ['en', 'zh-CN', 'ja'];
+
+let currentLang = 'en';   // resolved language actually in use
+let langPref = 'auto';    // user preference: auto | en | zh-CN | ja
+
+/** Normalize any BCP-47 tag (zh, zh-Hans, zh-TW, ja-JP, en-US…) to a supported language. */
+function normalizeLang(raw) {
+  const tag = String(raw || '').toLowerCase();
+  if (!tag) return 'en';
+  if (tag.startsWith('zh')) return 'zh-CN';
+  if (tag.startsWith('ja')) return 'ja';
+  if (tag.startsWith('en')) return 'en';
+  const exact = SUPPORTED_LANGS.find(l => l.toLowerCase() === tag);
+  return exact || 'en';
+}
+
+/** Resolve a preference into a concrete language; 'auto' follows the browser. */
+function resolveLang(pref) {
+  const p = pref || 'auto';
+  if (p !== 'auto') return normalizeLang(p);
+  const nav = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language];
+  for (const tag of nav) {
+    const norm = normalizeLang(tag);
+    // With 'auto' return the first browser language we actually support.
+    if (norm !== 'en' || String(tag).toLowerCase().startsWith('en')) return norm;
+  }
+  return 'en';
+}
+
+/** Look up a key: current language → English → the key itself. Supports {placeholders}. */
+function t(key, params) {
+  const dict = window.I18N_DICT || {};
+  const table = dict[currentLang] || {};
+  const fallback = dict.en || {};
+  let text = table[key];
+  if (text === undefined || text === '') text = fallback[key];
+  if (text === undefined) text = key;
+  if (params) {
+    text = text.replace(/\{(\w+)\}/g, (m, name) => (params[name] !== undefined ? String(params[name]) : m));
+  }
+  return text;
+}
+
+/** Apply translations to static markup: data-i18n / -html / -placeholder / -title. */
+function applyI18n(root) {
+  const scope = root || document;
+  scope.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+  scope.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+  scope.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  scope.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  scope.querySelectorAll('.shortcut-input').forEach(el => {
+    const def = SHORTCUT_DEFS.find(d => d.key === el.dataset.key);
+    if (def) el.title = t(def.labelKey);
+  });
+}
+
+/** Re-render every piece of UI that is generated in JS (called after a language switch). */
+function refreshDynamicText() {
+  if (!state.settings) return;
+  updateShortcutBadges();
+  renderSidebar();
+  renderSnippets();
+  if (state.editor) {
+    state.editor.options.placeholder = t('editor.placeholder');
+    state.editor.codemirror.setOption('placeholder', t('editor.placeholder'));
+    rebuildEditorToolbar();
+  }
+  if (!$('#settingsModal').hidden) fillSettingsForm();
+  if (!$('#aiModal').hidden) renderAiList();
+  if (!$('#pipelineModal').hidden) renderPipeline();
+}
+
+/** Switch to a resolved language and refresh the UI. */
+function setLanguage(lang, opts) {
+  currentLang = normalizeLang(lang);
+  document.documentElement.lang = currentLang;
+  document.title = t('app.title');
+  applyI18n();
+  if (opts && opts.rerender === false) return;
+  refreshDynamicText();
+}
+
+/** Store a language preference (auto | en | zh-CN | ja) and apply it. */
+function applyLangPreference(pref, opts) {
+  langPref = pref || 'auto';
+  try { localStorage.setItem(LANG_STORAGE, langPref); } catch (err) { /* private mode */ }
+  setLanguage(resolveLang(langPref), opts);
+}
+
+/* ------------------------------------------------------------------ state */
 const state = {
   version: '',
   dataDir: '',
@@ -31,14 +126,14 @@ const state = {
 };
 
 const SHORTCUT_DEFS = [
-  { key: 'newSnippet', label: '新建灵感', desc: '在任意位置打开灵感编辑窗口' },
-  { key: 'saveSnippet', label: '保存灵感', desc: '编辑窗口中保存并关闭' },
-  { key: 'focusSearch', label: '聚焦搜索', desc: '跳到搜索框并全选' },
-  { key: 'selectAll', label: '全选 / 取消全选', desc: '选中当前列表中的全部灵感' },
-  { key: 'pipelineNext', label: '流水线下一条', desc: '流水线中保存当前条目并进入下一条' },
-  { key: 'togglePreview', label: '切换预览', desc: '编辑窗口中切换 Markdown 预览' },
-  { key: 'openSettings', label: '打开设置', desc: '打开设置面板' },
-  { key: 'closeModal', label: '关闭弹窗', desc: '关闭当前弹窗' },
+  { key: 'newSnippet', labelKey: 'sc.newSnippet', descKey: 'sc.newSnippetDesc' },
+  { key: 'saveSnippet', labelKey: 'sc.saveSnippet', descKey: 'sc.saveSnippetDesc' },
+  { key: 'focusSearch', labelKey: 'sc.focusSearch', descKey: 'sc.focusSearchDesc' },
+  { key: 'selectAll', labelKey: 'sc.selectAll', descKey: 'sc.selectAllDesc' },
+  { key: 'pipelineNext', labelKey: 'sc.pipelineNext', descKey: 'sc.pipelineNextDesc' },
+  { key: 'togglePreview', labelKey: 'sc.togglePreview', descKey: 'sc.togglePreviewDesc' },
+  { key: 'openSettings', labelKey: 'sc.openSettings', descKey: 'sc.openSettingsDesc' },
+  { key: 'closeModal', labelKey: 'sc.closeModal', descKey: 'sc.closeModalDesc' },
 ];
 
 const DEFAULT_SHORTCUTS = {
@@ -48,7 +143,7 @@ const DEFAULT_SHORTCUTS = {
 
 /* ------------------------------------------------------------------ 工具 */
 async function api(method, path, body) {
-  const opts = { method, headers: {} };
+  const opts = { method, headers: { 'X-Lang': currentLang } };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -57,7 +152,7 @@ async function api(method, path, body) {
   const text = await res.text();
   let data = null;
   if (text) { try { data = JSON.parse(text); } catch (_) { data = { error: text }; } }
-  if (!res.ok) throw new Error((data && data.error) || ('请求失败 HTTP ' + res.status));
+  if (!res.ok) throw new Error((data && data.error) || t('toast.requestFailed', { status: res.status }));
   return data;
 }
 
@@ -113,17 +208,25 @@ function fmtTime(iso) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
   const diff = (Date.now() - d.getTime()) / 1000;
-  if (diff < 60) return '刚刚';
-  if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
-  if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
-  if (diff < 86400 * 7) return Math.floor(diff / 86400) + ' 天前';
-  return d.toLocaleDateString('zh-CN');
+  if (diff < 60) return t('time.justNow');
+  // Intl gives idiomatic relative time per language; the dictionary is the fallback.
+  try {
+    const rtf = new Intl.RelativeTimeFormat(currentLang, { numeric: 'auto' });
+    if (diff < 3600) return rtf.format(-Math.floor(diff / 60), 'minute');
+    if (diff < 86400) return rtf.format(-Math.floor(diff / 3600), 'hour');
+    if (diff < 86400 * 7) return rtf.format(-Math.floor(diff / 86400), 'day');
+  } catch (err) {
+    if (diff < 3600) return t('time.minutesAgo', { n: Math.floor(diff / 60) });
+    if (diff < 86400) return t('time.hoursAgo', { n: Math.floor(diff / 3600) });
+    if (diff < 86400 * 7) return t('time.daysAgo', { n: Math.floor(diff / 86400) });
+  }
+  return d.toLocaleDateString(currentLang);
 }
 
 function fmtFull(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? '' : d.toLocaleString('zh-CN');
+  return isNaN(d.getTime()) ? '' : d.toLocaleString(currentLang);
 }
 
 // Go 的零值时间会序列化成 0001-01-01，这里当作「未设置」
@@ -148,7 +251,7 @@ function closeModal(id) { const el = $('#' + id); if (el) el.hidden = true; }
 function anyModalOpen() { return $$('.modal-backdrop').some(m => !m.hidden); }
 function topModal() { const open = $$('.modal-backdrop').filter(m => !m.hidden); return open.length ? open[open.length - 1] : null; }
 
-function confirmDialog(text, title = '确认操作') {
+function confirmDialog(text, title = t('confirm.title')) {
   return new Promise((resolve) => {
     $('#confirmTitle').textContent = title;
     $('#confirmText').textContent = text;
@@ -232,7 +335,7 @@ function renderSidebar() {
   const bulkCat = $('#bulkCategory');
   if (bulkCat) {
     const cur = bulkCat.value;
-    bulkCat.innerHTML = '<option value="">— 设置分类 —</option><option value="__none__">（未分类）</option>' +
+    bulkCat.innerHTML = '<option value="">' + escapeHtml(t('bulk.setCategory')) + '</option><option value="__none__">' + escapeHtml(t('bulk.uncategorized')) + '</option>' +
       state.categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
     bulkCat.value = cur;
   }
@@ -256,7 +359,7 @@ function renderSidebar() {
     catList.appendChild(btn);
   });
   if (!state.categories.length) {
-    catList.innerHTML = '<div class="hint" style="padding:4px 9px">还没有分类，点右上角 ＋ 新建</div>';
+    catList.innerHTML = '<div class="hint" style="padding:4px 9px">' + escapeHtml(t('nav.emptyCategories')) + '</div>';
   }
 
   // 标签
@@ -277,7 +380,7 @@ function renderSidebar() {
     tagList.appendChild(chip);
   });
   if (!state.tags.length) {
-    tagList.innerHTML = '<div class="hint">还没有标签</div>';
+    tagList.innerHTML = '<div class="hint">' + escapeHtml(t('nav.emptyTags')) + '</div>';
   }
 }
 
@@ -298,22 +401,22 @@ function cardHtml(sn) {
     ? `<div class="card-content markdown">${mdToHtml(sn.content)}</div>`
     : `<div class="card-content plain">${escapeHtml(plainExcerpt(sn.content))}</div>`;
 
-  const srcLabel = sn.titleSource === 'ai' ? 'AI 标题' : (sn.titleSource === 'truncate' ? '自动标题' : '');
+  const srcLabel = sn.titleSource === 'ai' ? t('card.srcAi') : (sn.titleSource === 'truncate' ? t('card.srcAuto') : '');
   return `
     <article class="card ${state.selection.has(sn.id) ? 'selected' : ''}" data-id="${sn.id}" style="--cat-color:${escapeHtml(cat ? cat.color : 'var(--border)')}">
       <div class="card-head">
         <input type="checkbox" class="pick" ${state.selection.has(sn.id) ? 'checked' : ''}>
-        <h3 class="card-title">${escapeHtml(sn.title || '未命名灵感')}</h3>
+        <h3 class="card-title">${escapeHtml(sn.title || t('card.untitled'))}</h3>
         <div class="card-badges">${sn.pinned ? '<span class="pin-badge">📌</span>' : ''}${sn.archived ? '<span class="pin-badge">🗄️</span>' : ''}</div>
         <div class="card-actions">
-          <button class="icon-btn act-pin" title="${sn.pinned ? '取消置顶' : '置顶'}">${sn.pinned ? '📍' : '📌'}</button>
-          <button class="icon-btn act-delete" title="删除">🗑</button>
+          <button class="icon-btn act-pin" title="${sn.pinned ? t('card.unpin') : t('card.pin')}">${sn.pinned ? '📍' : '📌'}</button>
+          <button class="icon-btn act-delete" title="${escapeHtml(t('card.delete'))}">🗑</button>
         </div>
       </div>
       ${meta.length ? `<div class="card-meta">${meta.join('')}</div>` : ''}
       ${preview}
       <div class="card-foot">
-        <span title="${escapeHtml(fmtFull(sn.updatedAt))}">更新于 ${escapeHtml(fmtTime(sn.updatedAt))}</span>
+        <span title="${escapeHtml(fmtFull(sn.updatedAt))}">${escapeHtml(t('card.updatedAt', { time: fmtTime(sn.updatedAt) }))}</span>
         ${srcLabel ? `<span class="src-badge">${srcLabel}</span>` : ''}
       </div>
     </article>`;
@@ -324,20 +427,19 @@ function renderSnippets() {
   const items = state.snippets;
   grid.innerHTML = items.map(cardHtml).join('');
   $('#emptyState').hidden = items.length > 0;
-  $('#viewCount').textContent = items.length + ' 条';
+  $('#viewCount').textContent = t('view.count', { n: items.length });
 
-  const titles = {
-    all: '全部灵感', uncategorized: '未分类', pinned: '置顶', archived: '归档',
-  };
-  let title = titles[state.view];
-  if (state.view === 'category') title = '分类：' + ((catById(state.viewId) || {}).name || '');
-  if (state.view === 'tag') title = '标签：' + ((tagById(state.viewId) || {}).name || '');
-  $('#viewTitle').textContent = title || '灵感';
+  const titleKeys = { all: 'view.all', uncategorized: 'view.uncategorized', pinned: 'view.pinned', archived: 'view.archived' };
+  let title = titleKeys[state.view] ? t(titleKeys[state.view]) : '';
+  if (state.view === 'category') title = t('view.category', { name: (catById(state.viewId) || {}).name || '' });
+  if (state.view === 'tag') title = t('view.tag', { name: (tagById(state.viewId) || {}).name || '' });
+  $('#viewTitle').textContent = title || t('view.fallback');
 
   const hint = $('#searchHint');
   if (state.query) {
     hint.hidden = false;
-    hint.textContent = `搜索「${state.query}」（${state.mode === 'title' ? '仅标题' : state.mode === 'content' ? '仅正文' : '全文'}）`;
+    const modeKey = state.mode === 'title' ? 'search.modeTitle' : (state.mode === 'content' ? 'search.modeContent' : 'search.modeAll');
+    hint.textContent = t('search.hint', { query: state.query, mode: t(modeKey) });
   } else hint.hidden = true;
 
   // 卡片事件
@@ -380,53 +482,83 @@ function toggleSelect(id, on) {
 function renderBulkBar() {
   const n = state.selection.size;
   $('#bulkBar').hidden = n === 0;
-  $('#bulkCount').textContent = `已选 ${n} 条`;
+  $('#bulkCount').textContent = t('bulk.selected', { n });
 }
 
 async function deleteSnippets(ids) {
   if (state.settings.ui.confirmDelete) {
-    const ok = await confirmDialog(`确定删除这 ${ids.length} 条灵感吗？此操作不可撤销。`, '删除灵感');
+    const ok = await confirmDialog(t('confirm.deleteNMsg', { n: ids.length }), t('confirm.deleteNTitle'));
     if (!ok) return;
   }
   await api('POST', '/api/snippets/bulk', { ids, action: 'delete' });
   ids.forEach(id => state.selection.delete(id));
-  toast(`已删除 ${ids.length} 条灵感`, 'ok');
+  toast(t('toast.deletedN', { n: ids.length }), 'ok');
   await loadSnippets(); renderSidebar();
 }
 
 /* ------------------------------------------------------------------ 编辑器 */
+
+// EasyMDE toolbar button class → translation key (used for both initial build and live switching)
+const TOOLBAR_KEYS = {
+  'tb-bold': 'toolbar.bold',
+  'tb-italic': 'toolbar.italic',
+  'tb-strikethrough': 'toolbar.strikethrough',
+  'tb-heading': 'toolbar.heading',
+  'tb-quote': 'toolbar.quote',
+  'tb-unordered-list': 'toolbar.ul',
+  'tb-ordered-list': 'toolbar.ol',
+  'tb-link': 'toolbar.link',
+  'tb-image': 'toolbar.image',
+  'tb-code': 'toolbar.code',
+  'tb-table': 'toolbar.table',
+  'tb-horizontal-rule': 'toolbar.hr',
+  'tb-preview': 'toolbar.preview',
+  'tb-side-by-side': 'toolbar.sideBySide',
+  'tb-fullscreen': 'toolbar.fullscreen',
+  'tb-guide': 'toolbar.guide',
+};
+
+/** Refresh editor toolbar tooltips after a language switch (no editor rebuild needed). */
+function rebuildEditorToolbar() {
+  if (!state.editor) return;
+  Object.keys(TOOLBAR_KEYS).forEach(cls => {
+    const btn = document.querySelector('.editor-toolbar .' + cls);
+    if (btn) btn.title = t(TOOLBAR_KEYS[cls]);
+  });
+}
+
 function ensureEditor() {
   if (state.editor) return state.editor;
-  const tb = (name, action, cls, title, extra) => Object.assign({ name, action, className: cls, title }, extra || {});
+  const tb = (name, action, cls, titleKey, extra) => Object.assign({ name, action, className: cls, title: t(titleKey) }, extra || {});
   state.editor = new EasyMDE({
     element: $('#edContent'),
     autoDownloadFontAwesome: false,
     spellChecker: false,
     autofocus: false,
-    placeholder: '随手写下你的灵感…支持 Markdown：标题、列表、引用、代码块、表格、图片链接…',
+    placeholder: t('editor.placeholder'),
     status: ['lines', 'words'],
     minHeight: '260px',
     toolbar: [
-      tb('bold', EasyMDE.toggleBold, 'tb-bold', '加粗 (Ctrl+B)'),
-      tb('italic', EasyMDE.toggleItalic, 'tb-italic', '斜体 (Ctrl+I)'),
-      tb('strikethrough', EasyMDE.toggleStrikethrough, 'tb-strikethrough', '删除线'),
+      tb('bold', EasyMDE.toggleBold, 'tb-bold', 'toolbar.bold'),
+      tb('italic', EasyMDE.toggleItalic, 'tb-italic', 'toolbar.italic'),
+      tb('strikethrough', EasyMDE.toggleStrikethrough, 'tb-strikethrough', 'toolbar.strikethrough'),
       '|',
-      tb('heading', EasyMDE.toggleHeadingSmaller, 'tb-heading', '标题'),
-      tb('quote', EasyMDE.toggleBlockquote, 'tb-quote', '引用'),
-      tb('unordered-list', EasyMDE.toggleUnorderedList, 'tb-unordered-list', '无序列表'),
-      tb('ordered-list', EasyMDE.toggleOrderedList, 'tb-ordered-list', '有序列表'),
+      tb('heading', EasyMDE.toggleHeadingSmaller, 'tb-heading', 'toolbar.heading'),
+      tb('quote', EasyMDE.toggleBlockquote, 'tb-quote', 'toolbar.quote'),
+      tb('unordered-list', EasyMDE.toggleUnorderedList, 'tb-unordered-list', 'toolbar.ul'),
+      tb('ordered-list', EasyMDE.toggleOrderedList, 'tb-ordered-list', 'toolbar.ol'),
       '|',
-      tb('link', EasyMDE.drawLink, 'tb-link', '插入链接 (Ctrl+K)'),
-      tb('image', EasyMDE.drawImage, 'tb-image', '插入图片'),
-      tb('code', EasyMDE.toggleCodeBlock, 'tb-code', '代码块'),
-      tb('table', EasyMDE.drawTable, 'tb-table', '表格'),
-      tb('horizontal-rule', EasyMDE.drawHorizontalRule, 'tb-horizontal-rule', '分割线'),
+      tb('link', EasyMDE.drawLink, 'tb-link', 'toolbar.link'),
+      tb('image', EasyMDE.drawImage, 'tb-image', 'toolbar.image'),
+      tb('code', EasyMDE.toggleCodeBlock, 'tb-code', 'toolbar.code'),
+      tb('table', EasyMDE.drawTable, 'tb-table', 'toolbar.table'),
+      tb('horizontal-rule', EasyMDE.drawHorizontalRule, 'tb-horizontal-rule', 'toolbar.hr'),
       '|',
-      tb('preview', EasyMDE.togglePreview, 'tb-preview no-disable', '预览 (Alt+P)'),
-      tb('side-by-side', EasyMDE.toggleSideBySide, 'tb-side-by-side no-disable no-mobile', '并排预览'),
-      tb('fullscreen', EasyMDE.toggleFullScreen, 'tb-fullscreen no-disable no-mobile', '全屏 (F11)'),
+      tb('preview', EasyMDE.togglePreview, 'tb-preview no-disable', 'toolbar.preview'),
+      tb('side-by-side', EasyMDE.toggleSideBySide, 'tb-side-by-side no-disable no-mobile', 'toolbar.sideBySide'),
+      tb('fullscreen', EasyMDE.toggleFullScreen, 'tb-fullscreen no-disable no-mobile', 'toolbar.fullscreen'),
       '|',
-      tb('guide', 'https://marked.js.org/using_advanced', 'tb-guide no-disable no-mobile', 'Markdown 语法'),
+      tb('guide', 'https://marked.js.org/using_advanced', 'tb-guide no-disable no-mobile', 'toolbar.guide'),
     ],
     renderingConfig: { singleLineBreaks: true, codeSyntaxHighlighting: false },
     previewRender: (txt) => mdToHtml(txt),
@@ -440,19 +572,23 @@ function updateEditorMeta() {
   const chars = content.length;
   const tags = state.editorTags.size;
   const cat = catById($('#edCategory').value);
-  $('#edMeta').textContent = `共 ${chars} 字 · 标签 ${tags} 个 · 分类 ${cat ? cat.name : '未分类'}`;
+  $('#edMeta').textContent = t('editor.meta', {
+    chars: chars,
+    tags: tags,
+    cat: cat ? cat.name : t('editor.uncategorized'),
+  });
 }
 
 function renderEditorTags() {
   const box = $('#edTagChips');
   box.innerHTML = '';
   state.editorTags.forEach(id => {
-    const t = tagById(id);
-    if (!t) return;
+    const tag = tagById(id);
+    if (!tag) return;
     const chip = document.createElement('span');
     chip.className = 'chip';
-    chip.style.setProperty('--c', t.color);
-    chip.innerHTML = `<span class="chip-dot"></span>${escapeHtml(t.name)}<span class="x" title="移除">✕</span>`;
+    chip.style.setProperty('--c', tag.color);
+    chip.innerHTML = `<span class="chip-dot"></span>${escapeHtml(tag.name)}<span class="x" title="${escapeHtml(t('editor.removeTag'))}">✕</span>`;
     $('.x', chip).onclick = () => { state.editorTags.delete(id); state.editorDirty = true; renderEditorTags(); updateEditorMeta(); };
     box.appendChild(chip);
   });
@@ -460,7 +596,7 @@ function renderEditorTags() {
 
 function fillEditorCategorySelect(selected) {
   const sel = $('#edCategory');
-  sel.innerHTML = '<option value="">未分类</option>' +
+  sel.innerHTML = `<option value="">${escapeHtml(t('editor.uncategorized'))}</option>` +
     state.categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
   sel.value = selected || '';
 }
@@ -475,15 +611,15 @@ async function openEditor(id) {
   if (id) {
     const sn = await api('GET', '/api/snippets/' + id);
     state.editingId = sn.id;
-    $('#edHeading').textContent = '编辑灵感';
+    $('#edHeading').textContent = t('editor.edit');
     $('#edTitle').value = sn.title || '';
     ed.value(sn.content || '');
     fillEditorCategorySelect(sn.categoryId);
-    (sn.tags || []).forEach(t => state.editorTags.add(t));
+    (sn.tags || []).forEach(tagId => state.editorTags.add(tagId));
     $('#btnEdDelete').hidden = false;
   } else {
     state.editingId = null;
-    $('#edHeading').textContent = '新建灵感';
+    $('#edHeading').textContent = t('editor.new');
     $('#edTitle').value = '';
     ed.value('');
     fillEditorCategorySelect(state.view === 'category' ? state.viewId : '');
@@ -500,7 +636,7 @@ async function openEditor(id) {
 
 async function closeEditor(force) {
   if (!force && state.editorDirty && (state.editor.value().trim() || $('#edTitle').value.trim())) {
-    const ok = await confirmDialog('当前内容尚未保存，确定要关闭吗？', '放弃编辑');
+    const ok = await confirmDialog(t('confirm.discardMsg'), t('confirm.discardTitle'));
     if (!ok) return;
   }
   closeModal('editorModal');
@@ -518,7 +654,7 @@ async function addTagByName(name) {
     state.stats = res.stats || state.stats;
     fillDatalist(); renderSidebar();
     t = res.tag;
-    toast(`已新建标签「${clean}」`, 'ok');
+    toast(t('toast.tagCreated', { name: clean }), 'ok');
   }
   return t;
 }
@@ -534,7 +670,7 @@ async function saveEditor() {
     pinned: false,
   };
   if (!payload.content.trim() && !payload.title) {
-    toast('内容或标题至少填一个', 'err');
+    toast(t('editor.needContentOrTitle'), 'err');
     return;
   }
   try {
@@ -543,11 +679,11 @@ async function saveEditor() {
       payload.pinned = cur ? cur.pinned : false;
       payload.archived = cur ? cur.archived : false;
       const res = await api('PUT', '/api/snippets/' + state.editingId, payload);
-      toast('已保存', 'ok');
+      toast(t('toast.saved'), 'ok');
       state.stats = res.stats || state.stats;
     } else {
       const res = await api('POST', '/api/snippets', payload);
-      toast('灵感已创建：' + (res.snippet.title || ''), 'ok');
+      toast(t('toast.created', { title: res.snippet.title || '' }), 'ok');
       (res.warnings || []).forEach(w => toast(w, 'warn', 5000));
       state.stats = res.stats || state.stats;
     }
@@ -585,9 +721,10 @@ function fillSettingsForm() {
   $('#davInterval').value = s.webdav.intervalMinutes || 60;
   $('#davKeep').value = s.webdav.keepRemote || 10;
   $('#davStatus').textContent = isRealTime(s.webdav.lastBackup)
-    ? `上次备份：${fmtFull(s.webdav.lastBackup)} — ${s.webdav.lastStatus || ''}`
-    : '尚未备份过';
+    ? t('settings.webdav.last', { time: fmtFull(s.webdav.lastBackup), status: s.webdav.lastStatus || '' })
+    : t('settings.webdav.never');
 
+  $('#uiLanguage').value = s.ui.language || 'auto';
   $('#uiTheme').value = s.ui.theme || 'dark';
   $('#uiTitleRunes').value = s.ui.titleMaxRunes || 10;
   $('#uiCardPreview').checked = !!s.ui.cardPreview;
@@ -595,6 +732,11 @@ function fillSettingsForm() {
   $('#dataDirText').value = state.dataDir;
   $('#uiTheme').onchange = () => {
     document.documentElement.dataset.theme = $('#uiTheme').value;
+  };
+  // Language switches live: no need to save settings first.
+  $('#uiLanguage').onchange = () => {
+    state.settings.ui.language = $('#uiLanguage').value;
+    setLanguage(resolveLang($('#uiLanguage').value));
   };
 }
 
@@ -623,6 +765,7 @@ function collectSettings() {
     },
     shortcuts: Object.assign({}, cur.shortcuts),
     ui: {
+      language: $('#uiLanguage').value || 'auto',
       theme: $('#uiTheme').value,
       titleMaxRunes: parseInt($('#uiTitleRunes').value, 10) || 10,
       cardPreview: $('#uiCardPreview').checked,
@@ -637,7 +780,7 @@ async function saveSettings() {
   const res = await api('PUT', '/api/settings', payload);
   state.settings = res.settings;
   applySettingsToUI();
-  toast('设置已保存', 'ok');
+  toast(t('settings.saved'), 'ok');
   closeModal('settingsModal');
   await loadSnippets();
   renderSidebar();
@@ -651,8 +794,8 @@ function renderShortcutEditor() {
     const row = document.createElement('div');
     row.className = 'shortcut-row';
     row.innerHTML = `
-      <div class="label">${escapeHtml(def.label)}<div class="desc">${escapeHtml(def.desc)}</div></div>
-      <input class="shortcut-input" readonly data-key="${def.key}" value="${escapeHtml(sc[def.key] || '')}">`;
+      <div class="label">${escapeHtml(t(def.labelKey))}<div class="desc">${escapeHtml(t(def.descKey))}</div></div>
+      <input class="shortcut-input" readonly data-key="${def.key}" title="${escapeHtml(t(def.labelKey))}" value="${escapeHtml(sc[def.key] || '')}">`;
     wrap.appendChild(row);
   });
 
@@ -812,7 +955,7 @@ function openTagEditor(kind, id) {
   state.tagEditor.kind = kind;
   state.tagEditor.id = id || null;
   const isTag = kind === 'tag';
-  $('#tagEditorHeading').textContent = (id ? '编辑' : '新建') + (isTag ? '标签' : '分类');
+  $('#tagEditorHeading').textContent = t(id ? (isTag ? 'tagEditor.editTag' : 'tagEditor.editCategory') : (isTag ? 'tagEditor.newTag' : 'tagEditor.newCategory'));
   const cur = id ? (isTag ? tagById(id) : catById(id)) : null;
   $('#tagNameInput').value = cur ? cur.name : '';
   state.tagEditor.color = cur ? cur.color : '#6366f1';
@@ -839,7 +982,7 @@ function renderPalette() {
 
 async function saveTagEditor() {
   const name = $('#tagNameInput').value.trim();
-  if (!name) { toast('请输入名称', 'err'); return; }
+  if (!name) { toast(t('tagEditor.needName'), 'err'); return; }
   const color = $('#tagColorInput').value || state.tagEditor.color;
   const isTag = state.tagEditor.kind === 'tag';
   try {
@@ -850,7 +993,7 @@ async function saveTagEditor() {
       const res = await api('POST', isTag ? '/api/tags' : '/api/categories', { name, color });
       applyTaxonomy(res);
     }
-    toast('已保存', 'ok');
+    toast(t('toast.saved'), 'ok');
     closeModal('tagEditorModal');
     await loadSnippets();
   } catch (err) { toast(err.message, 'err'); }
@@ -861,8 +1004,8 @@ async function deleteTagEditor() {
   const id = state.tagEditor.id;
   if (!id) return;
   const ok = await confirmDialog(
-    isTag ? '删除标签后，所有灵感上的该标签都会被移除。确定吗？' : '删除分类后，相关灵感会变为「未分类」。确定吗？',
-    isTag ? '删除标签' : '删除分类');
+    isTag ? t('tagEditor.deleteTagMsg') : t('tagEditor.deleteCategoryMsg'),
+    isTag ? t('tagEditor.deleteTagTitle') : t('tagEditor.deleteCategoryTitle'));
   if (!ok) return;
   const res = await api('DELETE', `/${isTag ? 'api/tags' : 'api/categories'}/${id}`);
   applyTaxonomy(res);
@@ -870,27 +1013,27 @@ async function deleteTagEditor() {
     state.view = 'all'; state.viewId = null;
   }
   closeModal('tagEditorModal');
-  toast('已删除', 'ok');
+  toast(t('toast.deletedOne'), 'ok');
   await loadSnippets();
 }
 
 /* ------------------------------------------------------------------ AI 打标 */
 async function runAiSuggest(ids) {
   if (!state.settings.ai.enabled) {
-    toast('请先在「设置 → AI」中启用并配置 AI API', 'err', 5000);
+    toast(t('aiModal.needConfig'), 'err', 5000);
     return;
   }
-  if (!ids.length) { toast('请先勾选要打标的灵感', 'warn'); return; }
+  if (!ids.length) { toast(t('aiModal.pickFirst'), 'warn'); return; }
   openModal('aiModal');
-  $('#aiStatus').textContent = `正在调用 AI 分析 ${ids.length} 条灵感…`;
-  $('#aiList').innerHTML = '<div class="hint">AI 正在阅读内容并生成建议，请稍候…</div>';
+  $('#aiStatus').textContent = t('aiModal.analyzing', { n: ids.length });
+  $('#aiList').innerHTML = '<div class="hint">' + escapeHtml(t('aiModal.reading')) + '</div>';
   $('#btnAiApply').disabled = true;
   try {
     const res = await api('POST', '/api/ai/suggest', { ids });
     state.aiItems = res.items || [];
     renderAiList();
     const okCount = state.aiItems.filter(i => !i.error).length;
-    $('#aiStatus').textContent = `已生成 ${okCount} 条建议${okCount < ids.length ? '（部分失败）' : ''}`;
+    $('#aiStatus').textContent = t('aiModal.generated', { n: okCount }) + (okCount < ids.length ? t('aiModal.partial') : '');
     $('#btnAiApply').disabled = okCount === 0;
   } catch (err) {
     $('#aiStatus').textContent = '';
@@ -900,33 +1043,33 @@ async function runAiSuggest(ids) {
 
 function renderAiList() {
   const box = $('#aiList');
-  if (!state.aiItems.length) { box.innerHTML = '<div class="hint">没有可用的建议。</div>'; return; }
+  if (!state.aiItems.length) { box.innerHTML = '<div class="hint">' + escapeHtml(t('aiModal.none')) + '</div>'; return; }
   box.innerHTML = state.aiItems.map((item, idx) => {
     if (item.error) {
       return `<div class="ai-item"><div class="ai-item-head"><span class="t">${escapeHtml(item.title || item.id)}</span></div>
-        <div class="ai-err">AI 分析失败：${escapeHtml(item.error)}</div></div>`;
+        <div class="ai-err">${escapeHtml(t('aiModal.failed', { error: item.error }))}</div></div>`;
     }
-    const tagChips = (item.tags || []).map(t => {
-      const exists = state.tags.some(x => x.name.toLowerCase() === t.toLowerCase());
-      return `<label class="pick-chip" style="--c:${exists ? escapeHtml((state.tags.find(x => x.name.toLowerCase() === t.toLowerCase()) || {}).color || '#64748b') : '#64748b'}">
-        <input type="checkbox" class="ai-tag" data-idx="${idx}" value="${escapeHtml(t)}" checked>${escapeHtml(t)}${exists ? '' : ' <span style="opacity:.7">新</span>'}</label>`;
+    const tagChips = (item.tags || []).map(tagName => {
+      const exists = state.tags.some(x => x.name.toLowerCase() === tagName.toLowerCase());
+      return `<label class="pick-chip" style="--c:${exists ? escapeHtml((state.tags.find(x => x.name.toLowerCase() === tagName.toLowerCase()) || {}).color || '#64748b') : '#64748b'}">
+        <input type="checkbox" class="ai-tag" data-idx="${idx}" value="${escapeHtml(tagName)}" checked>${escapeHtml(tagName)}${exists ? '' : ' <span style="opacity:.7">' + escapeHtml(t('aiModal.new')) + '</span>'}</label>`;
     }).join('');
     const catExists = item.category && state.categories.some(c => c.name.toLowerCase() === item.category.toLowerCase());
     return `<div class="ai-item">
       <div class="ai-item-head">
         <input type="checkbox" class="ai-item-on" data-idx="${idx}" checked>
-        <span class="t">${escapeHtml(item.title || '未命名')}</span>
+        <span class="t">${escapeHtml(item.title || t('aiModal.untitled'))}</span>
         ${item.summary ? `<span class="src-badge">${escapeHtml(item.summary)}</span>` : ''}
       </div>
       <div class="ai-suggest-row">
-        <span class="hint">标签：</span>${tagChips || '<span class="hint">无</span>'}
+        <span class="hint">${escapeHtml(t('aiModal.tags'))}</span>${tagChips || '<span class="hint">' + escapeHtml(t('aiModal.no')) + '</span>'}
       </div>
       <div class="ai-suggest-row">
-        <span class="hint">分类：</span>
+        <span class="hint">${escapeHtml(t('aiModal.category'))}</span>
         ${item.category
           ? `<label class="pick-chip" style="--c:${catExists ? escapeHtml((state.categories.find(c => c.name.toLowerCase() === item.category.toLowerCase()) || {}).color || '#64748b') : '#64748b'}">
-               <input type="checkbox" class="ai-cat" data-idx="${idx}" value="${escapeHtml(item.category)}" checked>${escapeHtml(item.category)}${catExists ? '' : ' <span style="opacity:.7">新</span>'}</label>`
-          : '<span class="hint">无</span>'}
+               <input type="checkbox" class="ai-cat" data-idx="${idx}" value="${escapeHtml(item.category)}" checked>${escapeHtml(item.category)}${catExists ? '' : ' <span style="opacity:.7">' + escapeHtml(t('aiModal.new')) + '</span>'}</label>`
+          : '<span class="hint">' + escapeHtml(t('aiModal.no')) + '</span>'}
       </div>
     </div>`;
   }).join('');
@@ -950,15 +1093,15 @@ async function applyAiSuggestions() {
       mode: $('#aiMode').value,
     });
   });
-  if (!items.length) { toast('没有勾选任何建议', 'warn'); return; }
+  if (!items.length) { toast(t('aiModal.noSelection'), 'warn'); return; }
   $('#btnAiApply').disabled = true;
-  $('#aiStatus').textContent = '正在应用…';
+  $('#aiStatus').textContent = t('aiModal.applying');
   try {
     const res = await api('POST', '/api/ai/apply', { items });
     state.tags = res.tags || state.tags;
     state.categories = res.categories || state.categories;
     state.stats = res.stats || state.stats;
-    toast(`已为 ${res.applied} 条灵感添加标签/分类（新增标签 ${res.tagsCreated}、分类 ${res.catsCreated}）`, 'ok', 4500);
+    toast(t('aiModal.applied', { n: res.applied, tags: res.tagsCreated, cats: res.catsCreated }), 'ok', 4500);
     closeModal('aiModal');
     renderSidebar(); fillDatalist();
     await loadSnippets();
@@ -971,7 +1114,7 @@ async function applyAiSuggestions() {
 
 /* ------------------------------------------------------------------ 流水线 */
 function openPipeline(ids) {
-  if (!ids.length) { toast('请先勾选要处理的灵感', 'warn'); return; }
+  if (!ids.length) { toast(t('pipe.needSelect'), 'warn'); return; }
   // 按当前列表顺序排列
   const order = state.snippets.map(s => s.id);
   const sorted = ids.slice().sort((a, b) => order.indexOf(a) - order.indexOf(b));
@@ -985,7 +1128,7 @@ function openPipeline(ids) {
 
 function fillPipelineCategorySelect(selected) {
   const sel = $('#pipeCategory');
-  sel.innerHTML = '<option value="">未分类</option>' +
+  sel.innerHTML = `<option value="">${escapeHtml(t('editor.uncategorized'))}</option>` +
     state.categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
   sel.value = selected || '';
 }
@@ -996,27 +1139,27 @@ function renderPipeline() {
   const item = p.items[p.index];
   const draft = p.drafts[item.id];
   $('#pipeProgress').textContent = `${p.index + 1} / ${p.items.length}`;
-  $('#pipeTitle').textContent = item.title || '未命名灵感';
+  $('#pipeTitle').textContent = item.title || t('card.untitled');
   $('#pipeContent').innerHTML = mdToHtml(item.content || '');
   fillPipelineCategorySelect(draft.categoryId);
 
   const box = $('#pipeTagList');
   box.innerHTML = '';
-  state.tags.forEach(t => {
-    const on = draft.tags.has(t.id);
+  state.tags.forEach(tag => {
+    const on = draft.tags.has(tag.id);
     const chip = document.createElement('span');
     chip.className = 'pick-chip';
-    chip.style.setProperty('--c', t.color);
+    chip.style.setProperty('--c', tag.color);
     chip.style.opacity = on ? '1' : '.55';
-    chip.innerHTML = `${on ? '✓' : '＋'} ${escapeHtml(t.name)}`;
+    chip.innerHTML = `${on ? '✓' : '＋'} ${escapeHtml(tag.name)}`;
     chip.onclick = () => {
-      if (draft.tags.has(t.id)) draft.tags.delete(t.id); else draft.tags.add(t.id);
+      if (draft.tags.has(tag.id)) draft.tags.delete(tag.id); else draft.tags.add(tag.id);
       renderPipeline();
     };
     box.appendChild(chip);
   });
-  $('#pipeTagCount').textContent = draft.tags.size;
-  $('#btnPipeSaveNext').innerHTML = (p.index === p.items.length - 1 ? '保存并完成 ' : '保存并进入下一条 ') +
+  $('#pipeHint').textContent = t('pipe.selected', { n: draft.tags.size });
+  $('#btnPipeSaveNext').innerHTML = (p.index === p.items.length - 1 ? t('pipe.saveFinish') : t('pipe.saveNext')) +
     `<kbd data-sc="pipelineNext">${escapeHtml((state.settings.shortcuts || DEFAULT_SHORTCUTS).pipelineNext || '')}</kbd>`;
 }
 
@@ -1035,7 +1178,7 @@ async function pipelineSaveNext() {
     state.tags = res.tags || state.tags;
     state.stats = res.stats || state.stats;
   } catch (err) {
-    toast('保存失败：' + err.message, 'err');
+    toast(t('pipe.saveFailed', { error: err.message }), 'err');
     return;
   }
   p.index++;
@@ -1045,7 +1188,7 @@ async function pipelineSaveNext() {
 
 function finishPipeline() {
   closeModal('pipelineModal');
-  toast('流水线已完成 🎉', 'ok');
+  toast(t('pipe.done'), 'ok');
   renderSidebar(); fillDatalist();
   loadSnippets();
 }
@@ -1053,7 +1196,7 @@ function finishPipeline() {
 /* ------------------------------------------------------------------ WebDAV / 数据 */
 async function webdavTest() {
   const cfg = collectSettings().webdav;
-  $('#davStatus').textContent = '正在测试连接…';
+  $('#davStatus').textContent = t('dav.testing');
   $('#davStatus').className = 'test-result block';
   try {
     const res = await api('POST', '/api/webdav/test', cfg);
@@ -1070,86 +1213,86 @@ async function webdavBackupNow() {
   const saved = await api('PUT', '/api/settings', payload);
   state.settings = saved.settings;
   applySettingsToUI();
-  $('#davStatus').textContent = '正在上传备份…';
+  $('#davStatus').textContent = t('dav.uploading');
   $('#davStatus').className = 'test-result block';
   try {
     const res = await api('POST', '/api/webdav/backup');
-    $('#davStatus').textContent = `备份成功：${res.info.file}（${res.info.bytes} 字节）`;
+    $('#davStatus').textContent = t('dav.backupOk', { file: res.info.file, bytes: res.info.bytes });
     $('#davStatus').className = 'test-result block ok';
-    $('#davStatus').textContent += res.info.pruned ? `，清理旧备份 ${res.info.pruned} 份` : '';
-    toast('WebDAV 备份完成', 'ok');
+    $('#davStatus').textContent += res.info.pruned ? t('dav.backupPruned', { n: res.info.pruned }) : '';
+    toast(t('dav.backupDone'), 'ok');
   } catch (err) {
-    $('#davStatus').textContent = '备份失败：' + err.message;
+    $('#davStatus').textContent = t('dav.backupFailed', { error: err.message });
     $('#davStatus').className = 'test-result block err';
-    toast('备份失败：' + err.message, 'err', 5000);
+    toast(t('dav.backupFailed', { error: err.message }), 'err', 5000);
   }
 }
 
 async function webdavListRemote() {
   const box = $('#davFiles');
   box.hidden = false;
-  box.innerHTML = '<div class="remote-item"><span class="name">正在读取远端目录…</span></div>';
+  box.innerHTML = '<div class="remote-item"><span class="name">' + escapeHtml(t('dav.listing')) + '</span></div>';
   try {
     const res = await api('GET', '/api/webdav/list');
     const items = res.items || [];
-    if (!items.length) { box.innerHTML = '<div class="remote-item"><span class="name">远端目录暂无备份文件</span></div>'; return; }
+    if (!items.length) { box.innerHTML = '<div class="remote-item"><span class="name">' + escapeHtml(t('dav.noFiles')) + '</span></div>'; return; }
     box.innerHTML = items.filter(f => !f.isDir && /\.json$/i.test(f.name)).map(f => `
       <div class="remote-item">
         <span class="name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
         <span class="meta">${f.size ? Math.round(f.size / 1024) + ' KB · ' : ''}${escapeHtml(fmtFull(f.modTime) || '')}</span>
-        <button class="btn tiny" data-restore="${escapeHtml(f.name)}" data-mode="merge">合并恢复</button>
-        <button class="btn tiny danger" data-restore="${escapeHtml(f.name)}" data-mode="replace">覆盖恢复</button>
+        <button class="btn tiny" data-restore="${escapeHtml(f.name)}" data-mode="merge">${escapeHtml(t('dav.restoreMerge'))}</button>
+        <button class="btn tiny danger" data-restore="${escapeHtml(f.name)}" data-mode="replace">${escapeHtml(t('dav.restoreReplace'))}</button>
       </div>`).join('');
     $$('#davFiles [data-restore]').forEach(btn => {
       btn.onclick = () => restoreFromRemote(btn.dataset.restore, btn.dataset.mode);
     });
   } catch (err) {
-    box.innerHTML = `<div class="remote-item"><span class="name err">读取失败：${escapeHtml(err.message)}</span></div>`;
+    box.innerHTML = `<div class="remote-item"><span class="name err">${escapeHtml(t('dav.readFailed', { error: err.message }))}</span></div>`;
   }
 }
 
 async function restoreFromRemote(name, mode) {
   const ok = await confirmDialog(
-    `将从 WebDAV 恢复「${name}」，方式：${mode === 'replace' ? '覆盖（清空现有数据）' : '合并'}。恢复前会自动创建本地快照。继续吗？`,
-    '从 WebDAV 恢复');
+    t('confirm.restoreMsg', { name: name, mode: mode === 'replace' ? t('confirm.modeReplace') : t('confirm.modeMerge') }),
+    t('confirm.restoreTitle'));
   if (!ok) return;
-  toast('正在恢复…', 'info');
+  toast(t('dav.restoring'), 'info');
   try {
     const res = await api('POST', '/api/webdav/restore', { name, mode });
-    toast(`恢复完成：灵感 +${res.result.snippets}，标签 +${res.result.tags}，分类 +${res.result.categories}`, 'ok', 5000);
+    toast(t('dav.restored', { snippets: res.result.snippets, tags: res.result.tags, categories: res.result.categories }), 'ok', 5000);
     await bootstrap();
     await loadSnippets();
     fillSettingsForm();
   } catch (err) {
-    toast('恢复失败：' + err.message, 'err', 6000);
+    toast(t('dav.restoreFailed', { error: err.message }), 'err', 6000);
   }
 }
 
 async function localSnapshot() {
   try {
     const res = await api('POST', '/api/backup/local');
-    toast('已创建本地快照：' + res.path, 'ok', 5000);
+    toast(t('dav.snapshotCreated', { path: res.path }), 'ok', 5000);
   } catch (err) { toast(err.message, 'err'); }
 }
 
 async function importBackup() {
   const file = $('#importFile').files[0];
-  if (!file) { toast('请先选择备份文件', 'warn'); return; }
+  if (!file) { toast(t('dav.pickFile'), 'warn'); return; }
   const mode = $('#importMode').value;
   if (mode === 'replace') {
-    const ok = await confirmDialog('覆盖导入会清空当前全部灵感、标签与分类，确定继续吗？', '覆盖导入');
+    const ok = await confirmDialog(t('confirm.importReplaceMsg'), t('confirm.importReplaceTitle'));
     if (!ok) return;
   }
   try {
     const text = await file.text();
     const data = JSON.parse(text);
     const res = await api('POST', '/api/backup/import', { mode, data });
-    toast(`导入完成：灵感 +${res.result.snippets}，标签 +${res.result.tags}，分类 +${res.result.categories}`, 'ok', 5000);
+    toast(t('dav.imported', { snippets: res.result.snippets, tags: res.result.tags, categories: res.result.categories }), 'ok', 5000);
     await bootstrap();
     await loadSnippets();
     fillSettingsForm();
   } catch (err) {
-    toast('导入失败：' + err.message, 'err', 6000);
+    toast(t('dav.importFailed', { error: err.message }), 'err', 6000);
   }
 }
 
@@ -1192,30 +1335,30 @@ function bindEvents() {
   // 批量操作
   $('#btnBulkApplyCategory').onclick = async () => {
     const catId = $('#bulkCategory').value;
-    if (!catId) { toast('请选择分类', 'warn'); return; }
+    if (!catId) { toast(t('toast.pickCategory'), 'warn'); return; }
     const res = await api('POST', '/api/snippets/bulk', { ids: Array.from(state.selection), action: 'assign', categoryId: catId });
     applyTaxonomy(res);
-    toast(`已为 ${res.affected} 条灵感设置分类`, 'ok');
+    toast(t('toast.categoryApplied', { n: res.affected }), 'ok');
     await loadSnippets();
   };
   $('#btnBulkAddTag').onclick = async () => {
     const name = $('#bulkTagInput').value.trim();
-    if (!name) { toast('请输入标签名', 'warn'); return; }
-    const t = await addTagByName(name);
-    if (!t) return;
-    const res = await api('POST', '/api/snippets/bulk', { ids: Array.from(state.selection), action: 'assign', addTags: [t.name] });
+    if (!name) { toast(t('toast.pickTagName'), 'warn'); return; }
+    const tag = await addTagByName(name);
+    if (!tag) return;
+    const res = await api('POST', '/api/snippets/bulk', { ids: Array.from(state.selection), action: 'assign', addTags: [tag.name] });
     applyTaxonomy(res);
     $('#bulkTagInput').value = '';
-    toast(`已为 ${res.affected} 条灵感添加标签「${t.name}」`, 'ok');
+    toast(t('toast.tagApplied', { n: res.affected, name: tag.name }), 'ok');
     await loadSnippets();
   };
   $('#btnBulkArchive').onclick = async () => {
     const res = await api('POST', '/api/snippets/bulk', { ids: Array.from(state.selection), action: 'archive' });
-    applyTaxonomy(res); toast(`已归档 ${res.affected} 条`, 'ok'); await loadSnippets();
+    applyTaxonomy(res); toast(t('toast.archivedN', { n: res.affected }), 'ok'); await loadSnippets();
   };
   $('#btnBulkUnarchive').onclick = async () => {
     const res = await api('POST', '/api/snippets/bulk', { ids: Array.from(state.selection), action: 'unarchive' });
-    applyTaxonomy(res); toast(`已取消归档 ${res.affected} 条`, 'ok'); await loadSnippets();
+    applyTaxonomy(res); toast(t('toast.unarchivedN', { n: res.affected }), 'ok'); await loadSnippets();
   };
   $('#btnBulkDelete').onclick = () => deleteSnippets(Array.from(state.selection));
   $('#btnClearSelection').onclick = () => toggleSelectAll(false);
@@ -1234,29 +1377,29 @@ function bindEvents() {
     if (!state.editingId) return;
     const id = state.editingId;
     if (state.settings.ui.confirmDelete) {
-      const ok = await confirmDialog('确定删除这条灵感吗？', '删除灵感');
+      const ok = await confirmDialog(t('confirm.deleteOneMsg'), t('confirm.deleteOneTitle'));
       if (!ok) return;
     }
     await api('DELETE', '/api/snippets/' + id);
     state.editorDirty = false;
     closeModal('editorModal');
     state.editingId = null;
-    toast('已删除', 'ok');
+    toast(t('toast.deletedOne'), 'ok');
     await loadSnippets(); renderSidebar();
   };
   $('#btnEdAiTitle').onclick = async () => {
     const content = state.editor ? state.editor.value() : '';
-    if (!content.trim()) { toast('先写点内容再让 AI 起标题', 'warn'); return; }
-    if (!state.settings.ai.enabled) { toast('请先在设置中启用 AI', 'err'); return; }
+    if (!content.trim()) { toast(t('editor.needContentForTitle'), 'warn'); return; }
+    if (!state.settings.ai.enabled) { toast(t('editor.needAiEnabled'), 'err'); return; }
     $('#btnEdAiTitle').disabled = true;
-    $('#btnEdAiTitle').textContent = '✨ 生成中…';
+    $('#btnEdAiTitle').textContent = t('editor.aiTitleBusy');
     try {
       const res = await api('POST', '/api/ai/title', { content });
       $('#edTitle').value = res.title;
       state.editorDirty = true;
-      toast('AI 标题：' + res.title, 'ok');
+      toast(t('editor.aiTitleDone', { title: res.title }), 'ok');
     } catch (err) { toast(err.message, 'err', 5000); }
-    finally { $('#btnEdAiTitle').disabled = false; $('#btnEdAiTitle').textContent = '✨ AI 生成标题'; }
+    finally { $('#btnEdAiTitle').disabled = false; $('#btnEdAiTitle').textContent = t('editor.aiTitle'); }
   };
   $('#edTagInput').addEventListener('keydown', async (e) => {
     if (e.key !== 'Enter') return;
@@ -1270,7 +1413,8 @@ function bindEvents() {
   $('#btnSaveSettings').onclick = () => saveSettings().catch(err => toast(err.message, 'err'));
   $('#btnAiTest').onclick = async () => {
     const cfg = collectSettings().ai;
-    $('#aiTestResult').textContent = '测试中…';
+    if (!cfg.baseUrl) { toast(t('settings.ai.needUrl'), 'warn'); return; }
+    $('#aiTestResult').textContent = t('settings.ai.testing');
     $('#aiTestResult').className = 'test-result';
     try {
       const res = await api('POST', '/api/ai/test', cfg);
@@ -1299,7 +1443,7 @@ function bindEvents() {
   $('#btnShortcutReset').onclick = () => {
     state.settings.shortcuts = Object.assign({}, DEFAULT_SHORTCUTS);
     renderShortcutEditor();
-    toast('已恢复默认快捷键（记得点保存设置）', 'ok');
+    toast(t('settings.shortcuts.resetDone'), 'ok');
   };
 
   // 设置页签
@@ -1377,6 +1521,11 @@ function bindEvents() {
 
 /* ------------------------------------------------------------------ 启动 */
 async function init() {
+  // Paint with the remembered preference first so the UI never flashes the wrong language.
+  let cached = 'auto';
+  try { cached = localStorage.getItem(LANG_STORAGE) || 'auto'; } catch (err) { /* ignore */ }
+  applyLangPreference(cached, { rerender: false });
+
   bindEvents();
   renderPalette();
   $('#sortSelect').value = state.sort;
@@ -1384,12 +1533,14 @@ async function init() {
   try {
     await bootstrap();
   } catch (err) {
-    toast('初始化失败：' + err.message, 'err', 8000);
+    toast(t('toast.initFailed', { error: err.message }), 'err', 8000);
     return;
   }
+  // The language stored on the server wins over the local cache.
+  applyLangPreference((state.settings.ui && state.settings.ui.language) || cached);
   // 批量分类下拉
   const bulkCat = $('#bulkCategory');
-  bulkCat.innerHTML = '<option value="">— 设置分类 —</option><option value="__none__">（未分类）</option>' +
+  bulkCat.innerHTML = '<option value="">' + escapeHtml(t('bulk.setCategory')) + '</option><option value="__none__">' + escapeHtml(t('bulk.uncategorized')) + '</option>' +
     state.categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
   renderSidebar();
   await loadSnippets();

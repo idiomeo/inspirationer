@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"inspirationer/internal/i18n"
 	"inspirationer/internal/model"
 )
 
@@ -47,7 +48,7 @@ type Store struct {
 // New 打开（或初始化）数据目录。
 func New(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("创建数据目录失败: %w", err)
+		return nil, i18n.Errorf("err.dataDir", err)
 	}
 	s := &Store{dir: dir, settings: model.DefaultSettings()}
 
@@ -93,7 +94,7 @@ func (s *Store) loadJSON(name string, dst interface{}) error {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("读取 %s 失败: %w", name, err)
+		return i18n.Errorf("err.readFile", name, err)
 	}
 	if len(strings.TrimSpace(string(b))) == 0 {
 		return nil
@@ -103,7 +104,7 @@ func (s *Store) loadJSON(name string, dst interface{}) error {
 		if rec := s.recoverFromSnapshot(name, dst); rec {
 			return nil
 		}
-		return fmt.Errorf("解析 %s 失败: %w", name, err)
+		return i18n.Errorf("err.parseFile", name, err)
 	}
 	return nil
 }
@@ -523,7 +524,7 @@ func (s *Store) findTagByNameLocked(name string) (model.Tag, bool) {
 func (s *Store) CreateTag(name, color string) (model.Tag, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return model.Tag{}, errors.New("标签名不能为空")
+		return model.Tag{}, i18n.Errorf("err.emptyTagName")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -543,7 +544,7 @@ func (s *Store) CreateTag(name, color string) (model.Tag, error) {
 func (s *Store) EnsureTag(name string) (model.Tag, bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return model.Tag{}, false, errors.New("标签名不能为空")
+		return model.Tag{}, false, i18n.Errorf("err.emptyTagName")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -630,7 +631,7 @@ func (s *Store) findCategoryByNameLocked(name string) (model.Category, bool) {
 func (s *Store) CreateCategory(name, color string) (model.Category, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return model.Category{}, errors.New("分类名不能为空")
+		return model.Category{}, i18n.Errorf("err.emptyCategoryName")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -650,7 +651,7 @@ func (s *Store) CreateCategory(name, color string) (model.Category, error) {
 func (s *Store) EnsureCategory(name string) (model.Category, bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return model.Category{}, false, errors.New("分类名不能为空")
+		return model.Category{}, false, i18n.Errorf("err.emptyCategoryName")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

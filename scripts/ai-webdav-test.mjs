@@ -14,7 +14,7 @@ function check(name, cond, extra = '') {
   else { fail++; out(`  ❌ ${name}${extra ? ' — ' + extra : ''}`); }
 }
 async function api(method, path, body) {
-  const opts = { method, headers: {} };
+  const opts = { method, headers: { 'X-Lang': 'en' } };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json; charset=utf-8'; opts.body = JSON.stringify(body); }
   const res = await fetch(BASE + path, opts);
   const text = await res.text();
@@ -151,7 +151,7 @@ async function main() {
   // 状态记录
   const finalSettings = (await api('GET', '/api/settings')).data.settings;
   check('已记录上次备份时间', !!finalSettings.webdav.lastBackup && !finalSettings.webdav.lastBackup.startsWith('0001'));
-  check('已记录备份状态', /成功/.test(finalSettings.webdav.lastStatus || ''), finalSettings.webdav.lastStatus);
+  check('已记录备份状态', /OK/.test(finalSettings.webdav.lastStatus || ''), finalSettings.webdav.lastStatus);
 
   out('\n' + '='.repeat(70));
   out(`结果：通过 ${pass} 项，失败 ${fail} 项`);

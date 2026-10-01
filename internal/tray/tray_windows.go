@@ -249,7 +249,7 @@ func (t *Tray) Start() error {
 	case err := <-ready:
 		return err
 	case <-time.After(8 * time.Second):
-		return errors.New("创建托盘图标超时")
+		return errors.New("timed out while creating the tray icon")
 	}
 }
 
@@ -318,7 +318,7 @@ func (t *Tray) addIcon(attempts int) error {
 		lastErr = callErr
 		t.debug("NIM_ADD 第 %d 次失败: %v", attempt, callErr)
 	}
-	return fmt.Errorf("Shell_NotifyIcon(NIM_ADD) 失败: %v（%s）", lastErr, diagnoseTrayFailure())
+	return fmt.Errorf("Shell_NotifyIcon(NIM_ADD) failed: %v (%s)", lastErr, diagnoseTrayFailure())
 }
 
 // retryIcon 后台重试注册托盘图标。适用于：资源管理器稍后才就绪、
@@ -373,7 +373,7 @@ func (t *Tray) initWindow() error {
 		0, 0, 0, 0, 0, // 不显示、无样式
 		0, 0, hInst, 0)
 	if hwnd == 0 {
-		return fmt.Errorf("创建托盘消息窗口失败: %v", callErr)
+		return fmt.Errorf("failed to create the tray message window: %v", callErr)
 	}
 	// 自检：从本进程按类名找回自己的窗口
 	found, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(className)), 0)

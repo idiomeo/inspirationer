@@ -47,7 +47,7 @@ func SelfCheck() error {
 	}
 	for _, p := range procs {
 		if err := p.proc.Find(); err != nil {
-			return fmt.Errorf("%s 解析失败: %w", p.name, err)
+			return fmt.Errorf("cannot resolve %s: %w", p.name, err)
 		}
 	}
 	return nil
@@ -96,7 +96,7 @@ func ErrorBox(title, text string) {
 func OpenURL(target string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("调用 ShellExecuteW 异常: %v", r)
+			err = fmt.Errorf("ShellExecuteW panicked: %v", r)
 		}
 	}()
 	op, err := syscall.UTF16PtrFromString("open")
@@ -113,9 +113,9 @@ func OpenURL(target string) (err error) {
 		0, 0, swShowNormal)
 	if r <= 32 {
 		if callErr != nil && callErr != syscall.Errno(0) {
-			return fmt.Errorf("ShellExecuteW 失败: %v（返回码 %d）", callErr, r)
+			return fmt.Errorf("ShellExecuteW failed: %v (code %d)", callErr, r)
 		}
-		return fmt.Errorf("ShellExecuteW 返回错误码 %d", r)
+		return fmt.Errorf("ShellExecuteW returned error code %d", r)
 	}
 	return nil
 }

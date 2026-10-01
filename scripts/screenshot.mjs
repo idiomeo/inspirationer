@@ -9,6 +9,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const BASE = process.argv[2] || 'http://127.0.0.1:8420';
+// 可选第 3 个参数：文件名前缀（例如 ja- 用于截日语界面）
+const PREFIX = process.argv[3] || '';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DOCS = path.join(__dirname, '..', 'docs');
 const PORT = 9334;
@@ -60,7 +62,7 @@ class CDP {
   async shot(name) {
     await sleep(450);
     const r = await this.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-    const file = path.join(DOCS, name + '.png');
+    const file = path.join(DOCS, PREFIX + name + '.png');
     fs.writeFileSync(file, Buffer.from(r.data, 'base64'));
     console.log('已保存', file);
   }

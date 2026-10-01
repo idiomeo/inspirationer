@@ -52,7 +52,7 @@ func SelfCheck() error {
 	}
 	for _, p := range procs {
 		if err := p.proc.Find(); err != nil {
-			return fmt.Errorf("%s 解析失败: %w", p.name, err)
+			return fmt.Errorf("cannot resolve %s: %w", p.name, err)
 		}
 	}
 	return nil

@@ -118,6 +118,7 @@ async function main() {
     pipelineNext: 'Alt+J', togglePreview: 'Alt+P', openSettings: 'Alt+O', closeModal: 'Escape',
   };
   boot.settings.ui.confirmDelete = false;   // 自动化测试里避免二次确认弹窗
+  boot.settings.ui.language = 'en';         // 固定初始语言，便于断言文案
   await api('PUT', '/api/settings', boot.settings);
 
   // 清空历史数据，保证测试确定性
@@ -363,6 +364,74 @@ async function main() {
     await cdp.key('Escape', 'Escape', 27, 0);
     await cdp.waitFor("document.querySelector('#settingsModal').hidden", 'Esc 关闭设置');
     check('Esc 关闭弹窗', true);
+
+    /* ---------------------------------------------------- 多语言 */
+    out('\n[8b] 多语言：切换 / 无缺失 key / 持久化');
+    // 先记录英文基准
+    const enNew = await cdp.eval("document.querySelector('#btnNewSnippet span').textContent");
+    const enNav = await cdp.eval("document.querySelector('#mainNav .nav-item .ni-label').textContent");
+    check('初始语言为英文', await cdp.eval("document.documentElement.lang === 'en'"), await cdp.eval("document.documentElement.lang"));
+    check('英文标题正确', /Inspirationer/.test(await cdp.eval("document.title")), await cdp.eval("document.title"));
+
+    // 检查是否存在未翻译的 key（t() 找不到 key 时会直接返回 key 本身）
+    const keyLeak = () => cdp.eval(`(() => {
+      const re = /^[a-z][a-zA-Z]*\\.[a-zA-Z.]+$/;
+      const bad = [];
+      document.querySelectorAll('[data-i18n],[data-i18n-html],[data-i18n-placeholder],[data-i18n-title],[data-i18n-placeholder]').forEach(el => {
+        const vals = [el.textContent, el.placeholder, el.title].filter(Boolean);
+        vals.forEach(v => { if (re.test(String(v).trim())) bad.push(v.trim()); });
+      });
+      return bad;
+    })()`);
+
+    await cdp.eval("openSettings()");
+    await cdp.waitFor("!document.querySelector('#settingsModal').hidden", '设置已打开');
+    await cdp.eval("document.querySelector('.tabs .tab[data-tab=ui]').click()");
+    await sleep(150);
+
+    // 切到日语
+    await cdp.eval(`(() => {
+      const s = document.querySelector('#uiLanguage');
+      s.value = 'ja';
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    await sleep(300);
+    check('切换到日本語后 html lang 更新', await cdp.eval("document.documentElement.lang === 'ja'"));
+    const jaNew = await cdp.eval("document.querySelector('#btnNewSnippet span').textContent");
+    const jaNav = await cdp.eval("document.querySelector('#mainNav .nav-item .ni-label').textContent");
+    check('日语界面文案已替换', jaNew !== enNew && jaNav !== enNav, `${jaNew} / ${jaNav}`);
+    check('日语标题已替换', /ひらめき|Inspirationer/.test(await cdp.eval("document.title")), await cdp.eval("document.title"));
+    check('日语下无缺失 key', (await keyLeak()).length === 0, JSON.stringify(await keyLeak()));
+    check('设置面板文案同步为日语', /設定/.test(await cdp.eval("document.querySelector('#settingsModal .modal-head h3').textContent")));
+
+    // 切到简体中文
+    await cdp.eval(`(() => {
+      const s = document.querySelector('#uiLanguage');
+      s.value = 'zh-CN';
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`);
+    await sleep(300);
+    check('切换到简体中文', await cdp.eval("document.documentElement.lang === 'zh-CN'"));
+    const zhNav = await cdp.eval("document.querySelector('#mainNav .nav-item .ni-label').textContent");
+    check('中文界面文案正确', zhNav === '全部灵感', zhNav);
+    check('中文下无缺失 key', (await keyLeak()).length === 0, JSON.stringify(await keyLeak()));
+
+    // 保存设置并重载页面，验证语言被持久化
+    await cdp.eval("document.querySelector('#btnSaveSettings').click()");
+    await sleep(600);
+    await cdp.send('Page.reload');
+    await sleep(1200);
+    await cdp.waitFor("document.readyState === 'complete' && document.querySelectorAll('#grid .card').length >= 1", '重载页面');
+    await cdp.waitFor("document.documentElement.lang === 'zh-CN'", '语言持久化生效');
+    check('重载后仍是简体中文（设置已持久化）', true);
+    check('重载后 state 与文案一致', (await cdp.eval("state.settings.ui.language")) === 'zh-CN', await cdp.eval("state.settings.ui.language"));
+
+    // 切回英文，避免影响后续断言
+    await cdp.eval("applyLangPreference('en')");
+    await sleep(250);
+    check('可切回英文', await cdp.eval("document.documentElement.lang === 'en'"), await cdp.eval("document.querySelector('#mainNav .nav-item .ni-label').textContent"));
 
     /* ---------------------------------------------------- 控制台错误 */
     out('\n[9] 运行期错误检查');

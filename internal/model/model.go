@@ -76,7 +76,8 @@ type Shortcuts struct {
 
 // UISettings 界面偏好。
 type UISettings struct {
-	Theme          string `json:"theme"` // dark | light
+	Language       string `json:"language"` // auto | en | zh-CN | ja
+	Theme          string `json:"theme"`    // dark | light
 	CardPreview    bool   `json:"cardPreview"`
 	TitleMaxRunes  int    `json:"titleMaxRunes"`
 	ConfirmDelete  bool   `json:"confirmDelete"`
@@ -134,6 +135,7 @@ func DefaultSettings() Settings {
 			CloseModal:    "Escape",
 		},
 		UI: UISettings{
+			Language:      "auto",
 			Theme:         "dark",
 			CardPreview:   true,
 			TitleMaxRunes: 10,
@@ -192,6 +194,11 @@ func (s *Settings) Normalize() {
 	}
 	if s.UI.Theme != "light" && s.UI.Theme != "dark" {
 		s.UI.Theme = d.UI.Theme
+	}
+	switch s.UI.Language {
+	case "auto", "en", "zh-CN", "ja":
+	default:
+		s.UI.Language = d.UI.Language
 	}
 	if s.UI.TitleMaxRunes <= 0 || s.UI.TitleMaxRunes > 200 {
 		s.UI.TitleMaxRunes = d.UI.TitleMaxRunes

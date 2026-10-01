@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"inspirationer/internal/i18n"
 	"inspirationer/internal/platform"
 	"inspirationer/internal/server"
 	"inspirationer/internal/store"
@@ -35,7 +36,6 @@ var embeddedWeb embed.FS
 
 const (
 	version   = "1.1.0"
-	appName   = "灵感管理器"
 	mutexName = `Local\Inspirationer-Singleton`
 	logMaxLen = 4 << 20 // 单个日志文件上限 4MB
 )
@@ -60,11 +60,11 @@ func main() {
 	platform.SetDPIAware()
 
 	if *showVersion {
-		text := appName + " v" + version
+		text := i18n.T(i18n.English, "ui.versionInfo", version)
 		if platform.HasConsole() {
 			fmt.Println(text)
 		} else {
-			platform.MessageBox(appName, text)
+			platform.MessageBox(i18n.T(i18n.English, "ui.appName"), text)
 		}
 		return
 	}
@@ -72,46 +72,51 @@ func main() {
 	// ---------------------------------------------------------- 数据目录与日志
 	absData, err := resolveDataDir(*dataDir)
 	if err != nil {
-		platform.ErrorBox(appName+" 启动失败", "无法创建数据目录：\n\n"+err.Error())
+		platform.ErrorBox(i18n.T(i18n.English, "ui.appName"), i18n.T(i18n.English, "err.dataDir", err.Error()))
 		return
 	}
 	logger, logPath, closeLog := newLogger(absData)
 	defer closeLog()
 
+	// ---------------------------------------------------------- 存储
+	st, err := store.New(absData)
+	if err != nil {
+		fatal(logger, logPath, i18n.English, "ui.initFailed", err)
+		return
+	}
+
+	// Language used for tray menu, native dialogs and (optionally) logs.
+	lang := i18n.FromSetting(st.Settings().UI.Language)
+	displayName := i18n.T(lang, "ui.appName")
+
 	// ---------------------------------------------------------- 单实例
+	// 放在读取设置之后，这样「已有实例」的提示也能用对语言。
 	if *single {
 		release, already := platform.SingleInstance(mutexName)
 		if already {
-			handleExistingInstance(logger, absData, *openUI)
+			handleExistingInstance(lang, logger, absData, *openUI)
 			return
 		}
 		defer release()
 	}
 
-	// ---------------------------------------------------------- 存储
-	st, err := store.New(absData)
-	if err != nil {
-		fatal(logger, logPath, "初始化数据目录失败：%v", err)
-		return
-	}
-
 	webFS, err := fs.Sub(embeddedWeb, "web")
 	if err != nil {
-		fatal(logger, logPath, "加载内嵌前端资源失败：%v", err)
+		fatal(logger, logPath, lang, "ui.embedFailed", err)
 		return
 	}
 	if strings.TrimSpace(*webDir) != "" {
 		absWeb, err := filepath.Abs(*webDir)
 		if err != nil {
-			fatal(logger, logPath, "前端目录无效：%v", err)
+			fatal(logger, logPath, lang, "ui.devWebInvalid", err)
 			return
 		}
 		if _, err := os.Stat(filepath.Join(absWeb, "index.html")); err != nil {
-			fatal(logger, logPath, "前端目录里找不到 index.html：%s", absWeb)
+			fatal(logger, logPath, lang, "ui.devWebNoIndex", absWeb)
 			return
 		}
 		webFS = os.DirFS(absWeb)
-		logger.Printf("开发模式：前端资源来自磁盘 %s", absWeb)
+		logger.Printf("dev mode: serving front-end assets from %s", absWeb)
 	}
 
 	srv := server.New(st, webFS, version, logger)
@@ -119,9 +124,7 @@ func main() {
 	// ---------------------------------------------------------- 监听
 	ln, finalAddr, err := listen(*addr)
 	if err != nil {
-		fatal(logger, logPath,
-			"无法监听 %s：\n%v\n\n提示：端口可能已被占用，可用 -addr 127.0.0.1:其他端口 指定其它端口。",
-			*addr, err)
+		fatal(logger, logPath, lang, "ui.listenFailed", *addr, err)
 		return
 	}
 
@@ -140,7 +143,7 @@ func main() {
 	var shutdownOnce sync.Once
 	requestShutdown := func(reason string) {
 		shutdownOnce.Do(func() {
-			logger.Printf("收到退出请求（%s），正在关闭…", reason)
+			logger.Printf("shutdown requested (%s), closing…", reason)
 			close(shutdownCh)
 		})
 	}
@@ -149,7 +152,7 @@ func main() {
 	// 顺序很重要：HTTP 服务先启动，这样即使托盘/弹窗出问题，界面依然可用。
 	go func() {
 		if err := httpSrv.Serve(ln); err != nil && err != http.ErrServerClosed {
-			logger.Printf("服务异常退出：%v", err)
+			logger.Printf("server exited unexpectedly: %v", err)
 			requestShutdown("服务异常")
 		}
 	}()
@@ -157,36 +160,35 @@ func main() {
 	// ---------------------------------------------------------- 托盘
 	var tr *tray.Tray
 	if *useTray {
-		tr = tray.New(appName+" · "+url, func() { openBrowser(logger, url) })
+		tr = tray.New(displayName+" · "+url, func() { openBrowser(logger, url) })
 		tr.SetDebugLogger(logger.Printf)
-		tr.AddItem("打开灵感管理器", func() { openBrowser(logger, url) })
-		tr.AddItem("打开数据目录", func() { openPath(logger, absData) })
-		tr.AddItem("立即备份到 WebDAV", func() { backupNow(logger, srv, tr) })
+		tr.AddItem(i18n.T(lang, "tray.open"), func() { openBrowser(logger, url) })
+		tr.AddItem(i18n.T(lang, "tray.openData"), func() { openPath(logger, absData) })
+		tr.AddItem(i18n.T(lang, "tray.backupNow"), func() { backupNow(lang, logger, srv, tr) })
 		tr.AddSeparator()
-		tr.AddItem("查看日志文件", func() { openPath(logger, logPath) })
+		tr.AddItem(i18n.T(lang, "tray.openLog"), func() { openPath(logger, logPath) })
 		tr.AddSeparator()
-		tr.AddItem("退出", func() { requestShutdown("托盘菜单") })
-		tr.SetBalloon(appName+" 已启动", url)
+		tr.AddItem(i18n.T(lang, "tray.quit"), func() { requestShutdown("tray menu") })
+		tr.SetBalloon(i18n.T(lang, "tray.balloonTitle"), url)
 		if err := tr.Start(); err != nil {
 			// 托盘不可用时也要保证程序"可被看见、可被退出"：
 			// 打开日志控制台（可 Ctrl+C），并在后台弹一次说明（不阻塞服务）。
-			logger.Printf("托盘图标注册失败（服务照常运行）：%v", err)
+			logger.Printf("tray icon registration failed (service keeps running): %v", err)
 			consoleOpened := false
 			if !platform.HasConsole() {
 				consoleOpened = platform.AllocConsole()
 				if consoleOpened {
-					logger.Println("已打开日志控制台窗口，按 Ctrl+C 可退出程序")
+					logger.Println("opened a log console window — press Ctrl+C to quit")
 				}
 			}
 			hint := ""
 			if consoleOpened {
-				hint = "\n已打开日志控制台窗口：可按 Ctrl+C 退出。"
+				hint = i18n.T(lang, "ui.trayFailedConsoleHint")
 			}
-			go platform.MessageBox(appName,
-				"托盘图标注册失败，但服务已经正常启动。\n\n原因："+err.Error()+
-					"\n\n访问地址："+url+"\n数据目录："+absData+hint)
+			go platform.MessageBox(displayName,
+				i18n.T(lang, "ui.trayFailedBody", err.Error(), url, absData, hint))
 		} else {
-			logger.Printf("托盘图标已就绪：左键单击打开界面，右键打开菜单")
+			logger.Printf("tray icon ready: left-click to open the UI, right-click for the menu")
 		}
 	}
 
@@ -194,16 +196,16 @@ func main() {
 	srv.StartAutoBackup(ctx)
 	maybeSnapshot(st, logger)
 
-	logger.Printf("%s v%s 已启动", appName, version)
-	logger.Printf("  访问地址: %s", url)
-	logger.Printf("  数据目录: %s", absData)
+	logger.Printf("%s v%s started", displayName, version)
+	logger.Printf("  URL: %s", url)
+	logger.Printf("  Data folder: %s", absData)
 	if logPath != "" {
-		logger.Printf("  日志文件: %s", logPath)
+		logger.Printf("  Log file: %s", logPath)
 	}
 	if tr != nil && tr.Ready() {
-		logger.Printf("  退出方式: 托盘图标右键 → 退出")
+		logger.Printf("  Quit: tray icon → right-click → Quit")
 	} else {
-		logger.Printf("  退出方式: 按 Ctrl+C（或结束进程）")
+		logger.Printf("  Quit: press Ctrl+C (or end the process)")
 	}
 
 	if *openUI {
@@ -215,7 +217,7 @@ func main() {
 
 	select {
 	case <-ctx.Done():
-		logger.Println("收到系统信号，正在关闭…")
+		logger.Println("received a system signal, closing…")
 	case <-shutdownCh:
 	}
 
@@ -226,7 +228,7 @@ func main() {
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
 	removeRuntimeFile(absData)
-	logger.Println("已退出，数据已保存在本地。")
+	logger.Println("exited — your data has been saved locally.")
 }
 
 /* ------------------------------------------------------------------ 日志 */
@@ -314,14 +316,14 @@ func rotateLog(path string, max int64) {
 	_ = os.Rename(path, path+".1")
 }
 
-func fatal(logger *log.Logger, logPath, format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
-	logger.Printf("启动失败：%s", msg)
+func fatal(logger *log.Logger, logPath, lang, key string, args ...interface{}) {
+	msg := i18n.T(lang, key, args...)
+	logger.Printf("startup failed: %s", msg)
 	text := msg
 	if logPath != "" {
-		text += "\n\n日志文件：" + logPath
+		text += "\n\nLog file: " + logPath
 	}
-	platform.ErrorBox(appName+" - 启动失败", text)
+	platform.ErrorBox(i18n.T(lang, "ui.appName"), text)
 }
 
 /* ------------------------------------------------------------ 运行期状态 */
@@ -361,18 +363,17 @@ func removeRuntimeFile(dataDir string) {
 }
 
 // handleExistingInstance 处理「已经有实例在跑」的情况：直接打开它的界面。
-func handleExistingInstance(logger *log.Logger, dataDir string, openIt bool) {
+func handleExistingInstance(lang string, logger *log.Logger, dataDir string, openIt bool) {
 	url := readRuntimeURL(dataDir)
 	if url != "" && probeServer(url) {
-		logger.Printf("检测到已有实例正在运行：%s", url)
+		logger.Printf("another instance is already running at %s", url)
 		if openIt {
 			openBrowser(logger, url)
 		}
 		return
 	}
-	logger.Println("检测到已有实例正在运行，但无法确认其地址")
-	platform.MessageBox(appName,
-		"已经有一个灵感管理器在运行了。\n\n请查看屏幕右下角系统托盘里的 💡 图标（可能需要点开“显示隐藏的图标”）。")
+	logger.Println("another instance is running but its address could not be determined")
+	platform.MessageBox(i18n.T(lang, "ui.appName"), i18n.T(lang, "ui.alreadyRunning"))
 }
 
 // probeServer 探测某个地址上是否真的跑着本程序。
@@ -391,10 +392,10 @@ func probeServer(base string) bool {
 
 func openBrowser(logger *log.Logger, url string) {
 	if err := platform.OpenURL(url); err != nil {
-		logger.Printf("打开浏览器失败：%v（请手动访问 %s）", err, url)
+		logger.Printf("failed to open the browser: %v (please visit %s manually)", err, url)
 		return
 	}
-	logger.Printf("已请求系统默认浏览器打开：%s", url)
+	logger.Printf("asked the default browser to open: %s", url)
 }
 
 func openPath(logger *log.Logger, path string) {
@@ -402,25 +403,25 @@ func openPath(logger *log.Logger, path string) {
 		return
 	}
 	if err := platform.OpenURL(path); err != nil {
-		logger.Printf("打开 %s 失败：%v", path, err)
+		logger.Printf("failed to open %s: %v", path, err)
 	}
 }
 
-func backupNow(logger *log.Logger, srv *server.Server, tr *tray.Tray) {
+func backupNow(lang string, logger *log.Logger, srv *server.Server, tr *tray.Tray) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	info, err := srv.BackupToWebDAV(ctx)
 	if err != nil {
-		logger.Printf("手动备份失败：%v", err)
+		logger.Printf("manual backup failed: %v", err)
 		if tr != nil {
-			tr.Notify(appName+"：备份失败", err.Error())
+			tr.Notify(i18n.T(lang, "tray.backupFailTitle"), err.Error())
 		}
 		return
 	}
 	msg := fmt.Sprintf("%s（%.1f KB）", info.File, float64(info.Bytes)/1024)
-	logger.Printf("手动备份成功：%s", msg)
+	logger.Printf("manual backup succeeded: %s", msg)
 	if tr != nil {
-		tr.Notify(appName+"：备份成功", msg)
+		tr.Notify(i18n.T(lang, "tray.backupOkTitle"), msg)
 	}
 }
 
@@ -479,6 +480,6 @@ func maybeSnapshot(st *store.Store, logger *log.Logger) {
 		}
 	}
 	if path, err := st.Snapshot(30); err == nil {
-		logger.Printf("已创建本地快照：%s", path)
+		logger.Printf("local snapshot created: %s", path)
 	}
 }

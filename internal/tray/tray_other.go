@@ -34,7 +34,7 @@ func (t *Tray) SetBalloon(title, text string) {}
 func (t *Tray) Notify(title, text string) {}
 
 // Start 在非 Windows 系统上总是失败，调用方应据此跳过托盘。
-func (t *Tray) Start() error { return errors.New("当前操作系统不支持系统托盘") }
+func (t *Tray) Start() error { return errors.New("the system tray is not supported on this platform") }
 
 // Ready 在非 Windows 系统上始终为 false。
 func (t *Tray) Ready() bool { return false }

@@ -31,7 +31,7 @@ async function main() {
   s.ai = { enabled: false, baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', temperature: 0.3, maxTokens: 512, timeoutSeconds: 45 };
   s.webdav = { enabled: false, url: '', username: '', password: '', remoteDir: 'inspirationer', intervalMinutes: 60, keepRemote: 10, lastBackup: '0001-01-01T00:00:00Z', lastStatus: '' };
   s.shortcuts = Object.assign({}, DEFAULT_SHORTCUTS);
-  s.ui = { theme: 'dark', cardPreview: true, titleMaxRunes: 10, confirmDelete: true, autoBackupHint: false };
+  s.ui = { language: 'auto', theme: 'dark', cardPreview: true, titleMaxRunes: 10, confirmDelete: true, autoBackupHint: false };
   await api('PUT', '/api/settings', s);
 
   console.log('创建分类与标签…');

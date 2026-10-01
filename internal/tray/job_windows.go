@@ -35,21 +35,21 @@ var (
 func tokenIntegrityLevel() string {
 	rid, ok := integrityRID()
 	if !ok {
-		return "未知"
+		return "unknown"
 	}
 	switch rid {
 	case 0x0000:
-		return "Untrusted（不可信）"
+		return "Untrusted"
 	case 0x1000:
-		return "Low（低）"
+		return "Low"
 	case 0x2000:
-		return "Medium（中）"
+		return "Medium"
 	case 0x2100:
-		return "MediumPlus（中+）"
+		return "MediumPlus"
 	case 0x3000:
-		return "High（高）"
+		return "High"
 	case 0x4000:
-		return "System（系统）"
+		return "System"
 	default:
 		return fmt.Sprintf("0x%X", rid)
 	}
@@ -97,20 +97,20 @@ func integrityRID() (uint32, bool) {
 func canReachShell() (bool, string) {
 	cls, err := syscall.UTF16PtrFromString("Shell_TrayWnd")
 	if err != nil {
-		return false, "类名转换失败"
+		return false, "class name conversion failed"
 	}
 	hwnd, _, _ := procFindWindowW.Call(uintptr(unsafe.Pointer(cls)), 0)
 	if hwnd == 0 {
-		return false, "找不到 Shell_TrayWnd（资源管理器未运行）"
+		return false, "Shell_TrayWnd not found (Explorer is not running)"
 	}
 	var res uintptr
 	const smtoAbortIfHung = 0x0002
 	r, _, callErr := procSendMessageTimeoutW.Call(hwnd, 0 /* WM_NULL */, 0, 0,
 		smtoAbortIfHung, 1000, uintptr(unsafe.Pointer(&res)))
 	if r == 0 {
-		return false, fmt.Sprintf("向任务栏发消息被拒绝：%v", callErr)
+		return false, fmt.Sprintf("sending a message to the taskbar was denied: %v", callErr)
 	}
-	return true, "可以向任务栏发消息"
+	return true, "can send messages to the taskbar"
 }
 
 // tokenQuery = TOKEN_QUERY
@@ -191,14 +191,14 @@ func jobUIRestrictions() (uint32, bool) {
 // describeJobUI 把限制位翻译成人话。
 func describeJobUI(bits uint32) string {
 	if bits == 0 {
-		return "无限制"
+		return "none"
 	}
 	names := []string{}
 	for _, f := range []struct {
 		bit  uint32
 		name string
 	}{
-		{jobUILimitHandles, "HANDLES（禁止访问作业外的 USER 句柄/窗口，托盘图标会失败）"},
+		{jobUILimitHandles, "HANDLES (cannot touch USER handles outside the job — tray icons will fail)"},
 		{jobUILimitReadClipboard, "READCLIPBOARD"},
 		{jobUILimitWriteClipboard, "WRITECLIPBOARD"},
 		{jobUILimitSystemParameters, "SYSTEMPARAMETERS"},
@@ -217,18 +217,18 @@ func describeJobUI(bits uint32) string {
 // diagnoseTrayFailure 在托盘创建失败时给出可读原因，方便用户判断是环境问题还是被限制。
 func diagnoseTrayFailure() string {
 	parts := []string{}
-	parts = append(parts, "完整性级别="+tokenIntegrityLevel())
+	parts = append(parts, "integrity="+tokenIntegrityLevel())
 	if restricted, known := tokenRestricted(); known && restricted {
-		parts = append(parts, "令牌受限（沙箱特征）")
+		parts = append(parts, "restricted token (sandbox)")
 	}
 	bits, inJob := jobUIRestrictions()
 	if inJob {
-		parts = append(parts, "作业对象 UI 限制："+describeJobUI(bits))
+		parts = append(parts, "job UI limits: "+describeJobUI(bits))
 	}
 	station, desktop := windowStationDesktop()
-	parts = append(parts, "窗口站="+station+" 桌面="+desktop)
+	parts = append(parts, "window station="+station+" desktop="+desktop)
 	if ok, msg := canReachShell(); !ok {
 		parts = append(parts, msg)
 	}
-	return strings.Join(parts, "；")
+	return strings.Join(parts, "; ")
 }

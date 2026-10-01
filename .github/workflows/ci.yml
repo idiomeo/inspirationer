@@ -37,6 +37,9 @@ jobs:
       - name: go test
         run: go test ./... -v
 
+      - name: 校验界面文案完整性（i18n）
+        run: node scripts/check-i18n.mjs
+
       - name: 构建（GUI 版，无控制台窗口）
         run: go build -trimpath -ldflags "-s -w -H=windowsgui" -o inspirationer.exe .
 

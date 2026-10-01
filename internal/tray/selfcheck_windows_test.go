@@ -23,7 +23,7 @@ func TestWin32ProcsResolve(t *testing.T) {
 // TestDiagnoseTrayFailure 确认诊断信息包含关键字段，便于用户排查。
 func TestDiagnoseTrayFailure(t *testing.T) {
 	msg := diagnoseTrayFailure()
-	for _, want := range []string{"完整性级别", "窗口站", "桌面"} {
+	for _, want := range []string{"integrity=", "window station=", "desktop="} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("诊断信息缺少 %q：%s", want, msg)
 		}

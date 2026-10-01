@@ -6,13 +6,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"inspirationer/internal/i18n"
 	"inspirationer/internal/model"
 )
 
@@ -64,10 +64,10 @@ type chatResponse struct {
 // Chat 发起一次对话补全请求。
 func (c *Client) Chat(ctx context.Context, system, user string) (string, error) {
 	if !c.cfg.Enabled {
-		return "", fmt.Errorf("AI 功能未启用，请先在「设置 → AI」中开启并填写 API")
+		return "", i18n.Errorf("err.aiDisabledHint")
 	}
 	if strings.TrimSpace(c.cfg.APIKey) == "" && !strings.Contains(c.cfg.BaseURL, "localhost") && !strings.Contains(c.cfg.BaseURL, "127.0.0.1") {
-		return "", fmt.Errorf("未配置 AI API Key")
+		return "", i18n.Errorf("err.aiNoKey")
 	}
 
 	timeout := time.Duration(c.cfg.TimeoutSeconds) * time.Second
@@ -106,24 +106,24 @@ func (c *Client) Chat(ctx context.Context, system, user string) (string, error) 
 	client := &http.Client{Timeout: timeout + 5*time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("请求 AI 接口失败: %w", err)
+		return "", i18n.Errorf("err.aiRequestFailed", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("AI 接口返回 %d: %s", resp.StatusCode, truncate(string(raw), 400))
+		return "", i18n.Errorf("err.aiBadStatus", resp.StatusCode, truncate(string(raw), 400))
 	}
 
 	var cr chatResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
-		return "", fmt.Errorf("解析 AI 响应失败: %w (%s)", err, truncate(string(raw), 200))
+		return "", i18n.Errorf("err.aiBadResponse", err)
 	}
 	if cr.Error != nil && cr.Error.Message != "" {
-		return "", fmt.Errorf("AI 接口错误: %s", cr.Error.Message)
+		return "", i18n.Errorf("err.aiApiError", cr.Error.Message)
 	}
 	if len(cr.Choices) == 0 {
-		return "", fmt.Errorf("AI 接口未返回内容")
+		return "", i18n.Errorf("err.aiEmptyResponse")
 	}
 	out := cr.Choices[0].Message.Content
 	if strings.TrimSpace(out) == "" {

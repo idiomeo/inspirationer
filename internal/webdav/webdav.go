@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"inspirationer/internal/i18n"
 )
 
 // Client 是 WebDAV 连接配置。
@@ -46,14 +48,14 @@ type RemoteFile struct {
 func (c *Client) resolve(rel string) (string, error) {
 	base := strings.TrimSpace(c.BaseURL)
 	if base == "" {
-		return "", fmt.Errorf("未配置 WebDAV 地址")
+		return "", i18n.Errorf("err.webdavNoUrl")
 	}
 	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
 		base = "https://" + base
 	}
 	u, err := url.Parse(base)
 	if err != nil {
-		return "", fmt.Errorf("WebDAV 地址无效: %w", err)
+		return "", i18n.Errorf("err.webdavBadUrl", err)
 	}
 	rel = strings.Trim(strings.ReplaceAll(rel, "\\", "/"), "/")
 	if rel == "" {
@@ -118,7 +120,7 @@ func (c *Client) EnsureDir(ctx context.Context, dir string) error {
 		}
 		resp, err := c.do(ctx, "MKCOL", target, nil, nil)
 		if err != nil {
-			return fmt.Errorf("创建远端目录失败: %w", err)
+			return i18n.Errorf("err.webdavMkcol", err)
 		}
 		code := resp.StatusCode
 		body := readBody(resp)
@@ -126,7 +128,7 @@ func (c *Client) EnsureDir(ctx context.Context, dir string) error {
 		switch code {
 		case 200, 201, 204, 405: // OK / Created / No Content / 已存在
 		default:
-			return fmt.Errorf("创建远端目录 %s 失败: HTTP %d %s", sub, code, body)
+			return i18n.Errorf("err.webdavMkcolStatus", sub, code, body)
 		}
 	}
 	return nil
@@ -142,11 +144,11 @@ func (c *Client) Put(ctx context.Context, rel string, data []byte) error {
 		"Content-Type": "application/json; charset=utf-8",
 	})
 	if err != nil {
-		return fmt.Errorf("上传失败: %w", err)
+		return i18n.Errorf("err.webdavUpload", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("上传失败: HTTP %d %s", resp.StatusCode, readBody(resp))
+		return i18n.Errorf("err.webdavUploadStatus", resp.StatusCode, readBody(resp))
 	}
 	return nil
 }
@@ -159,11 +161,11 @@ func (c *Client) Get(ctx context.Context, rel string) ([]byte, error) {
 	}
 	resp, err := c.do(ctx, http.MethodGet, target, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("下载失败: %w", err)
+		return nil, i18n.Errorf("err.webdavDownload", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("下载失败: HTTP %d %s", resp.StatusCode, readBody(resp))
+		return nil, i18n.Errorf("err.webdavDownloadStatus", resp.StatusCode, readBody(resp))
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 }
@@ -180,7 +182,7 @@ func (c *Client) Delete(ctx context.Context, rel string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("删除失败: HTTP %d %s", resp.StatusCode, readBody(resp))
+		return i18n.Errorf("err.webdavDelete", resp.StatusCode, readBody(resp))
 	}
 	return nil
 }
@@ -222,7 +224,7 @@ func (c *Client) List(ctx context.Context, dir string) ([]RemoteFile, error) {
 		"Content-Type": "application/xml; charset=utf-8",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("列目录失败: %w", err)
+		return nil, i18n.Errorf("err.webdavList", err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
@@ -230,12 +232,12 @@ func (c *Client) List(ctx context.Context, dir string) ([]RemoteFile, error) {
 		return []RemoteFile{}, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("列目录失败: HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, i18n.Errorf("err.webdavListStatus", resp.StatusCode, strings.TrimSpace(string(raw)))
 	}
 
 	var ms multistatus
 	if err := xml.Unmarshal(raw, &ms); err != nil {
-		return nil, fmt.Errorf("解析目录列表失败: %w", err)
+		return nil, i18n.Errorf("err.webdavParseList", err)
 	}
 	basePath := ""
 	if u, err := url.Parse(target); err == nil {
@@ -291,11 +293,11 @@ func parseHTTPDate(s string) time.Time {
 	return time.Time{}
 }
 
-// Test 验证连通性（尝试列根目录）。
-func (c *Client) Test(ctx context.Context) (string, error) {
+// Test 验证连通性（尝试列根目录），lang 决定返回文案的语言。
+func (c *Client) Test(ctx context.Context, lang string) (string, error) {
 	files, err := c.List(ctx, "")
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("连接成功，根目录可见 %d 个条目", len(files)), nil
+	return i18n.T(lang, "webdav.testOk", len(files)), nil
 }

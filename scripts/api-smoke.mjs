@@ -11,8 +11,8 @@ function check(name, cond, extra = '') {
   else { fail++; out(`  ❌ ${name}${extra ? ' — ' + extra : ''}`); }
 }
 
-async function api(method, path, body) {
-  const opts = { method, headers: {} };
+async function api(method, path, body, extraHeaders) {
+  const opts = { method, headers: Object.assign({ 'X-Lang': 'en' }, extraHeaders || {}) };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json; charset=utf-8';
     opts.body = JSON.stringify(body);
@@ -194,12 +194,25 @@ async function main() {
   const afterReplace = await api('GET', '/api/snippets?archive=all');
   check('覆盖后灵感数量 = 4', afterReplace.data.total === 4, String(afterReplace.data.total));
 
-  // 12. AI 未配置时的错误处理
-  out('\n[12] AI 未启用时的降级与报错');
+  // 12. AI 未配置时的错误处理（默认英文，可用 X-Lang 切换）
+  out('\n[12] AI 未启用时的降级与报错（含多语言）');
   const aiTitle = await api('POST', '/api/ai/title', { content: '随便写点内容' });
-  check('AI 生成标题返回明确错误', !aiTitle.ok && /未启用/.test(aiTitle.data.error || ''), `${aiTitle.status} ${aiTitle.data.error}`);
+  check('AI 生成标题返回明确错误', !aiTitle.ok && /disabled/i.test(aiTitle.data.error || ''), `${aiTitle.status} ${aiTitle.data.error}`);
   const aiSug = await api('POST', '/api/ai/suggest', { ids: [sn1.id] });
-  check('AI 打标返回明确错误', !aiSug.ok && /未启用/.test(aiSug.data.error || ''), `${aiSug.status} ${aiSug.data.error}`);
+  check('AI 打标返回明确错误', !aiSug.ok && /disabled/i.test(aiSug.data.error || ''), `${aiSug.status} ${aiSug.data.error}`);
+
+  // 12b. 后端多语言：同一个错误用三种语言返回
+  const zhErr = await api('POST', '/api/ai/suggest', { ids: [sn1.id] }, { 'X-Lang': 'zh-CN' });
+  check('X-Lang: zh-CN 返回中文错误', /未启用/.test(zhErr.data.error || ''), zhErr.data.error);
+  const jaErr = await api('POST', '/api/ai/suggest', { ids: [sn1.id] }, { 'X-Lang': 'ja' });
+  check('X-Lang: ja 返回日文错误', /無効/.test(jaErr.data.error || ''), jaErr.data.error);
+  const enErr = await api('POST', '/api/ai/suggest', { ids: [sn1.id] }, { 'X-Lang': 'en-US' });
+  check('X-Lang 支持带地区码（en-US → en）', /disabled/i.test(enErr.data.error || ''), enErr.data.error);
+  // 不带头部时，?lang= 查询参数生效（头部优先级高于查询参数）
+  const queryLang = await api('POST', '/api/ai/suggest?lang=zh-CN', { ids: [sn1.id] }, { 'X-Lang': '' });
+  check('?lang= 查询参数同样生效（头部优先级更高）', /未启用/.test(queryLang.data.error || ''), queryLang.data.error);
+  const headerWins = await api('POST', '/api/ai/suggest?lang=ja', { ids: [sn1.id] }, { 'X-Lang': 'zh-CN' });
+  check('X-Lang 头部优先于 ?lang=', /未启用/.test(headerWins.data.error || ''), headerWins.data.error);
 
   // 13. WebDAV 未配置时的错误处理
   out('\n[13] WebDAV 未配置时的报错');
@@ -207,6 +220,8 @@ async function main() {
   check('备份返回明确错误', !davBackup.ok && /WebDAV/.test(davBackup.data.error || ''), `${davBackup.status} ${davBackup.data.error}`);
   const davList = await api('GET', '/api/webdav/list');
   check('列目录返回明确错误', !davList.ok, `${davList.status} ${davList.data.error}`);
+  const davListJa = await api('GET', '/api/webdav/list', undefined, { 'X-Lang': 'ja' });
+  check('WebDAV 错误本地化为日文', /WebDAV/.test(davListJa.data.error || '') && /設定|URL/.test(davListJa.data.error || ''), davListJa.data.error);
   const davTest = await api('POST', '/api/webdav/test', { url: '', username: '', password: '', remoteDir: 'x' });
   check('测试连接返回未配置', davTest.ok && davTest.data.ok === false, JSON.stringify(davTest.data));
 

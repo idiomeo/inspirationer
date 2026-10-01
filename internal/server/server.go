@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"inspirationer/internal/ai"
+	"inspirationer/internal/i18n"
 	"inspirationer/internal/model"
 	"inspirationer/internal/store"
 	"inspirationer/internal/webdav"
@@ -89,8 +90,14 @@ type apiError struct {
 	Error string `json:"error"`
 }
 
-func writeErr(w http.ResponseWriter, code int, format string, args ...interface{}) {
-	writeJSON(w, code, apiError{Error: fmt.Sprintf(format, args...)})
+// lang 解析请求语言：X-Lang / ?lang= / Accept-Language，最后回落到已保存的设置。
+func (s *Server) lang(r *http.Request) string {
+	return i18n.FromRequest(r, s.Store.Settings().UI.Language)
+}
+
+// writeErr 按请求语言输出本地化错误；文案取自 internal/i18n 的 key。
+func (s *Server) writeErr(w http.ResponseWriter, r *http.Request, code int, key string, args ...interface{}) {
+	writeJSON(w, code, apiError{Error: i18n.T(s.lang(r), key, args...)})
 }
 
 func decodeJSON(r *http.Request, dst interface{}) error {
@@ -104,7 +111,7 @@ func decodeJSON(r *http.Request, dst interface{}) error {
 func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/"), "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
-		writeErr(w, http.StatusNotFound, "未知接口")
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 		return
 	}
 	head := parts[0]
@@ -130,7 +137,7 @@ func (s *Server) handleAPI(w http.ResponseWriter, r *http.Request) {
 	case "webdav":
 		s.handleWebDAV(w, r, rest)
 	default:
-		writeErr(w, http.StatusNotFound, "未知接口: %s", head)
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 	}
 }
 
@@ -186,7 +193,7 @@ func (s *Server) handleSnippets(w http.ResponseWriter, r *http.Request, rest []s
 		case http.MethodPost:
 			s.createSnippet(w, r)
 		default:
-			writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+			s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		}
 		return
 	}
@@ -201,7 +208,7 @@ func (s *Server) handleSnippets(w http.ResponseWriter, r *http.Request, rest []s
 	case http.MethodGet:
 		sn, err := s.Store.GetSnippet(id)
 		if err != nil {
-			writeErr(w, http.StatusNotFound, "灵感不存在")
+			s.writeErr(w, r, http.StatusNotFound, "err.snippetNotFound")
 			return
 		}
 		writeJSON(w, http.StatusOK, sn)
@@ -209,14 +216,14 @@ func (s *Server) handleSnippets(w http.ResponseWriter, r *http.Request, rest []s
 		s.updateSnippet(w, r, id)
 	case http.MethodDelete:
 		if err := s.Store.DeleteSnippet(id); err != nil {
-			writeErr(w, http.StatusNotFound, "灵感不存在")
+			s.writeErr(w, r, http.StatusNotFound, "err.snippetNotFound")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	case http.MethodPatch:
 		s.patchSnippet(w, r, id)
 	default:
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 	}
 }
 
@@ -234,11 +241,11 @@ type snippetInput struct {
 func (s *Server) createSnippet(w http.ResponseWriter, r *http.Request) {
 	var in snippetInput
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	if strings.TrimSpace(in.Content) == "" && strings.TrimSpace(in.Title) == "" {
-		writeErr(w, http.StatusBadRequest, "内容不能为空")
+		s.writeErr(w, r, http.StatusBadRequest, "err.emptyContent")
 		return
 	}
 
@@ -246,7 +253,7 @@ func (s *Server) createSnippet(w http.ResponseWriter, r *http.Request) {
 	title := strings.TrimSpace(in.Title)
 	source := model.TitleSourceUser
 	if title == "" {
-		title, source, warnings = s.autoTitle(r.Context(), in.Content)
+		title, source, warnings = s.autoTitle(r.Context(), s.lang(r), in.Content)
 	}
 
 	sn, err := s.Store.CreateSnippet(model.Snippet{
@@ -258,7 +265,7 @@ func (s *Server) createSnippet(w http.ResponseWriter, r *http.Request) {
 		TitleSource: source,
 	})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "保存失败: %v", err)
+		s.writeErr(w, r, http.StatusInternalServerError, "err.saveFailed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -268,8 +275,8 @@ func (s *Server) createSnippet(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// autoTitle 未填标题时的兜底策略：优先 AI，其次截取正文。
-func (s *Server) autoTitle(ctx context.Context, content string) (string, string, []string) {
+// autoTitle 未填标题时的兜底策略：优先 AI，其次截取正文。lang 决定提示文案语言。
+func (s *Server) autoTitle(ctx context.Context, lang, content string) (string, string, []string) {
 	settings := s.Store.Settings()
 	warnings := []string{}
 	maxRunes := settings.UI.TitleMaxRunes
@@ -284,10 +291,10 @@ func (s *Server) autoTitle(ctx context.Context, content string) (string, string,
 			return strings.TrimSpace(t), model.TitleSourceAI, warnings
 		}
 		if err != nil {
-			warnings = append(warnings, "AI 生成标题失败，已改用正文截取："+err.Error())
+			warnings = append(warnings, i18n.T(lang, "warn.titleAiFallback", err))
 		}
 	} else {
-		warnings = append(warnings, "未配置 AI API，标题取正文前 "+strconv.Itoa(maxRunes)+" 个字")
+		warnings = append(warnings, i18n.T(lang, "warn.titleTruncated", maxRunes))
 	}
 	return TruncateTitle(content, maxRunes), model.TitleSourceTruncate, warnings
 }
@@ -322,12 +329,12 @@ func TruncateTitle(content string, maxRunes int) string {
 func (s *Server) updateSnippet(w http.ResponseWriter, r *http.Request, id string) {
 	var in snippetInput
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	cur, err := s.Store.GetSnippet(id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "灵感不存在")
+		s.writeErr(w, r, http.StatusNotFound, "err.snippetNotFound")
 		return
 	}
 	title := strings.TrimSpace(in.Title)
@@ -354,7 +361,7 @@ func (s *Server) updateSnippet(w http.ResponseWriter, r *http.Request, id string
 		TitleSource: source,
 	})
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "保存失败: %v", err)
+		s.writeErr(w, r, http.StatusInternalServerError, "err.saveFailed", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -377,7 +384,7 @@ type patchInput struct {
 func (s *Server) patchSnippet(w http.ResponseWriter, r *http.Request, id string) {
 	var in patchInput
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	addIDs := []string{}
@@ -418,7 +425,7 @@ func (s *Server) patchSnippet(w http.ResponseWriter, r *http.Request, id string)
 		}
 	})
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "灵感不存在")
+		s.writeErr(w, r, http.StatusNotFound, "err.snippetNotFound")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -438,16 +445,16 @@ type bulkInput struct {
 
 func (s *Server) bulkSnippets(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		return
 	}
 	var in bulkInput
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	if len(in.IDs) == 0 {
-		writeErr(w, http.StatusBadRequest, "未选择任何灵感")
+		s.writeErr(w, r, http.StatusBadRequest, "err.noSelection")
 		return
 	}
 	affected := 0
@@ -455,7 +462,7 @@ func (s *Server) bulkSnippets(w http.ResponseWriter, r *http.Request) {
 	case "delete":
 		n, err := s.Store.DeleteSnippets(in.IDs)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "删除失败: %v", err)
+			s.writeErr(w, r, http.StatusInternalServerError, "err.deleteFailed", err)
 			return
 		}
 		affected = n
@@ -488,12 +495,12 @@ func (s *Server) bulkSnippets(w http.ResponseWriter, r *http.Request) {
 		}
 		n, err := s.Store.BulkAssign(in.IDs, in.CategoryID, addIDs, removeIDs)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "批量修改失败: %v", err)
+			s.writeErr(w, r, http.StatusInternalServerError, "err.bulkFailed", err)
 			return
 		}
 		affected = n
 	default:
-		writeErr(w, http.StatusBadRequest, "未知操作: %s", in.Action)
+		s.writeErr(w, r, http.StatusBadRequest, "err.unknownAction", in.Action)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -516,17 +523,17 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request, rest []strin
 				Color string `json:"color"`
 			}
 			if err := decodeJSON(r, &in); err != nil {
-				writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+				s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 				return
 			}
 			t, err := s.Store.CreateTag(in.Name, in.Color)
 			if err != nil {
-				writeErr(w, http.StatusBadRequest, "%v", err)
+				s.writeErr(w, r, http.StatusBadRequest, "err.plain", err)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]interface{}{"tag": t, "items": s.Store.Tags(), "stats": s.Store.Stats()})
 		default:
-			writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+			s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		}
 		return
 	}
@@ -542,23 +549,23 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request, rest []strin
 			Color string `json:"color"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
-			writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+			s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 			return
 		}
 		t, err := s.Store.UpdateTag(id, in.Name, in.Color)
 		if err != nil {
-			writeErr(w, http.StatusNotFound, "标签不存在")
+			s.writeErr(w, r, http.StatusNotFound, "err.tagNotFound")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"tag": t, "items": s.Store.Tags()})
 	case http.MethodDelete:
 		if err := s.Store.DeleteTag(id); err != nil {
-			writeErr(w, http.StatusNotFound, "标签不存在")
+			s.writeErr(w, r, http.StatusNotFound, "err.tagNotFound")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.Store.Tags(), "stats": s.Store.Stats()})
 	default:
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 	}
 }
 
@@ -567,11 +574,11 @@ func (s *Server) mergeTag(w http.ResponseWriter, r *http.Request, fromID string)
 		Into string `json:"into"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	if in.Into == "" || in.Into == fromID {
-		writeErr(w, http.StatusBadRequest, "目标标签无效")
+		s.writeErr(w, r, http.StatusBadRequest, "err.invalidTagTarget")
 		return
 	}
 	filter := store.Filter{TagIDs: []string{fromID}, Archive: "all"}
@@ -612,17 +619,17 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request, rest [
 				Color string `json:"color"`
 			}
 			if err := decodeJSON(r, &in); err != nil {
-				writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+				s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 				return
 			}
 			c, err := s.Store.CreateCategory(in.Name, in.Color)
 			if err != nil {
-				writeErr(w, http.StatusBadRequest, "%v", err)
+				s.writeErr(w, r, http.StatusBadRequest, "err.plain", err)
 				return
 			}
 			writeJSON(w, http.StatusOK, map[string]interface{}{"category": c, "items": s.Store.Categories(), "stats": s.Store.Stats()})
 		default:
-			writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+			s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		}
 		return
 	}
@@ -634,23 +641,23 @@ func (s *Server) handleCategories(w http.ResponseWriter, r *http.Request, rest [
 			Color string `json:"color"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
-			writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+			s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 			return
 		}
 		c, err := s.Store.UpdateCategory(id, in.Name, in.Color)
 		if err != nil {
-			writeErr(w, http.StatusNotFound, "分类不存在")
+			s.writeErr(w, r, http.StatusNotFound, "err.categoryNotFound")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"category": c, "items": s.Store.Categories()})
 	case http.MethodDelete:
 		if err := s.Store.DeleteCategory(id); err != nil {
-			writeErr(w, http.StatusNotFound, "分类不存在")
+			s.writeErr(w, r, http.StatusNotFound, "err.categoryNotFound")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"items": s.Store.Categories(), "stats": s.Store.Stats()})
 	default:
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 	}
 }
 
@@ -666,7 +673,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		var in model.Settings
 		if err := decodeJSON(r, &in); err != nil {
-			writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+			s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 			return
 		}
 		cur := s.Store.Settings()
@@ -681,12 +688,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		in.WebDAV.LastStatus = cur.WebDAV.LastStatus
 		out, err := s.Store.UpdateSettings(in)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "保存设置失败: %v", err)
+			s.writeErr(w, r, http.StatusInternalServerError, "err.settingsSaveFailed", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"settings": out})
 	default:
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 	}
 }
 
@@ -694,7 +701,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAI(w http.ResponseWriter, r *http.Request, rest []string) {
 	if len(rest) == 0 {
-		writeErr(w, http.StatusNotFound, "未知接口")
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 		return
 	}
 	switch rest[0] {
@@ -707,7 +714,7 @@ func (s *Server) handleAI(w http.ResponseWriter, r *http.Request, rest []string)
 	case "apply":
 		s.aiApply(w, r)
 	default:
-		writeErr(w, http.StatusNotFound, "未知接口: ai/%s", rest[0])
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 	}
 }
 
@@ -725,7 +732,7 @@ func (s *Server) aiTest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !cfg.Enabled {
-		writeErr(w, http.StatusBadRequest, "AI 功能未启用")
+		s.writeErr(w, r, http.StatusBadRequest, "err.aiDisabled")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(cfg.TimeoutSeconds+10)*time.Second)
@@ -740,7 +747,7 @@ func (s *Server) aiTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) aiTitle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		return
 	}
 	var in struct {
@@ -748,7 +755,7 @@ func (s *Server) aiTitle(w http.ResponseWriter, r *http.Request) {
 		Content string `json:"content"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	content := in.Content
@@ -758,19 +765,19 @@ func (s *Server) aiTitle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if strings.TrimSpace(content) == "" {
-		writeErr(w, http.StatusBadRequest, "内容为空")
+		s.writeErr(w, r, http.StatusBadRequest, "err.emptyContent")
 		return
 	}
 	settings := s.Store.Settings()
 	if !settings.AI.Enabled {
-		writeErr(w, http.StatusBadRequest, "AI 功能未启用")
+		s.writeErr(w, r, http.StatusBadRequest, "err.aiDisabled")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(settings.AI.TimeoutSeconds+5)*time.Second)
 	defer cancel()
 	title, err := ai.New(settings.AI).GenerateTitle(ctx, content, 0)
 	if err != nil {
-		writeErr(w, http.StatusBadGateway, "%v", err)
+		s.writeErr(w, r, http.StatusBadGateway, "err.plain", err)
 		return
 	}
 	if in.ID != "" {
@@ -793,23 +800,23 @@ type suggestItem struct {
 
 func (s *Server) aiSuggest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		return
 	}
 	var in struct {
 		IDs []string `json:"ids"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	settings := s.Store.Settings()
 	if !settings.AI.Enabled {
-		writeErr(w, http.StatusBadRequest, "AI 功能未启用，请先在设置中配置 AI API")
+		s.writeErr(w, r, http.StatusBadRequest, "err.aiDisabledHint")
 		return
 	}
 	if len(in.IDs) == 0 {
-		writeErr(w, http.StatusBadRequest, "未选择任何灵感")
+		s.writeErr(w, r, http.StatusBadRequest, "err.noSelection")
 		return
 	}
 
@@ -878,14 +885,14 @@ type applyItem struct {
 
 func (s *Server) aiApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+		s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 		return
 	}
 	var in struct {
 		Items []applyItem `json:"items"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+		s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 		return
 	}
 	applied := 0
@@ -953,7 +960,7 @@ func (s *Server) aiApply(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []string) {
 	if len(rest) == 0 {
-		writeErr(w, http.StatusNotFound, "未知接口")
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 		return
 	}
 	switch rest[0] {
@@ -969,13 +976,13 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 	case "local":
 		path, err := s.Store.Snapshot(30)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "本地快照失败: %v", err)
+			s.writeErr(w, r, http.StatusInternalServerError, "err.snapshotFailed", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "path": path})
 	case "import":
 		if r.Method != http.MethodPost {
-			writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+			s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 			return
 		}
 		var in struct {
@@ -983,11 +990,11 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 			Data model.Backup `json:"data"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
-			writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+			s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 			return
 		}
 		if in.Data.App == "" && len(in.Data.Snippets) == 0 && len(in.Data.Tags) == 0 {
-			writeErr(w, http.StatusBadRequest, "备份数据为空或格式不正确")
+			s.writeErr(w, r, http.StatusBadRequest, "err.emptyBackup")
 			return
 		}
 		mode := store.ImportMerge
@@ -996,7 +1003,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 		}
 		res, err := s.Store.Import(in.Data, mode)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "导入失败: %v", err)
+			s.writeErr(w, r, http.StatusInternalServerError, "err.importFailed", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -1004,7 +1011,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 			"stats": s.Store.Stats(), "tags": s.Store.Tags(), "categories": s.Store.Categories(),
 		})
 	default:
-		writeErr(w, http.StatusNotFound, "未知接口: backup/%s", rest[0])
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 	}
 }
 
@@ -1012,7 +1019,7 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request, rest []str
 
 func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []string) {
 	if len(rest) == 0 {
-		writeErr(w, http.StatusNotFound, "未知接口")
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 		return
 	}
 	switch rest[0] {
@@ -1024,7 +1031,7 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
-		msg, err := webdav.New(cfg.URL, cfg.Username, cfg.Password).Test(ctx)
+		msg, err := webdav.New(cfg.URL, cfg.Username, cfg.Password).Test(ctx, s.lang(r))
 		if err != nil {
 			writeJSON(w, http.StatusOK, map[string]interface{}{"ok": false, "message": err.Error()})
 			return
@@ -1032,12 +1039,12 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "message": msg})
 	case "backup":
 		if r.Method != http.MethodPost {
-			writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+			s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 			return
 		}
 		info, err := s.BackupToWebDAV(r.Context())
 		if err != nil {
-			writeErr(w, http.StatusBadGateway, "%v", err)
+			s.writeErr(w, r, http.StatusBadGateway, "err.plain", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "info": info})
@@ -1047,13 +1054,13 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 		defer cancel()
 		files, err := webdav.New(cfg.URL, cfg.Username, cfg.Password).List(ctx, cfg.RemoteDir)
 		if err != nil {
-			writeErr(w, http.StatusBadGateway, "%v", err)
+			s.writeErr(w, r, http.StatusBadGateway, "err.plain", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{"items": files, "dir": cfg.RemoteDir})
 	case "restore":
 		if r.Method != http.MethodPost {
-			writeErr(w, http.StatusMethodNotAllowed, "方法不支持")
+			s.writeErr(w, r, http.StatusMethodNotAllowed, "err.methodNotAllowed")
 			return
 		}
 		var in struct {
@@ -1061,11 +1068,11 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 			Mode string `json:"mode"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
-			writeErr(w, http.StatusBadRequest, "请求体解析失败: %v", err)
+			s.writeErr(w, r, http.StatusBadRequest, "err.badBody", err)
 			return
 		}
 		if strings.TrimSpace(in.Name) == "" {
-			writeErr(w, http.StatusBadRequest, "未指定文件")
+			s.writeErr(w, r, http.StatusBadRequest, "err.noRemoteFile")
 			return
 		}
 		cfg := s.Store.Settings().WebDAV
@@ -1077,12 +1084,12 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 		}
 		data, err := webdav.New(cfg.URL, cfg.Username, cfg.Password).Get(ctx, rel+in.Name)
 		if err != nil {
-			writeErr(w, http.StatusBadGateway, "%v", err)
+			s.writeErr(w, r, http.StatusBadGateway, "err.plain", err)
 			return
 		}
 		var bk model.Backup
 		if err := json.Unmarshal(data, &bk); err != nil {
-			writeErr(w, http.StatusBadRequest, "远端文件不是有效的备份: %v", err)
+			s.writeErr(w, r, http.StatusBadRequest, "err.invalidBackupFile", err)
 			return
 		}
 		mode := store.ImportMerge
@@ -1093,7 +1100,7 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 		_, _ = s.Store.Snapshot(30)
 		res, err := s.Store.Import(bk, mode)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "恢复失败: %v", err)
+			s.writeErr(w, r, http.StatusInternalServerError, "err.restoreFailed", err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -1101,7 +1108,7 @@ func (s *Server) handleWebDAV(w http.ResponseWriter, r *http.Request, rest []str
 			"tags": s.Store.Tags(), "categories": s.Store.Categories(),
 		})
 	default:
-		writeErr(w, http.StatusNotFound, "未知接口: webdav/%s", rest[0])
+		s.writeErr(w, r, http.StatusNotFound, "err.unknownEndpoint")
 	}
 }
 
@@ -1149,7 +1156,7 @@ func (s *Server) BackupToWebDAV(ctx context.Context) (BackupInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	if err := client.EnsureDir(ctx, dir); err != nil {
-		_ = s.Store.PatchWebDAVStatus(time.Time{}, "失败: "+err.Error())
+		_ = s.Store.PatchWebDAVStatus(time.Time{}, "Failed: "+err.Error())
 		return BackupInfo{}, err
 	}
 
@@ -1164,7 +1171,7 @@ func (s *Server) BackupToWebDAV(ctx context.Context) (BackupInfo, error) {
 		rel = dir + "/" + name
 	}
 	if err := client.Put(ctx, rel, payload); err != nil {
-		_ = s.Store.PatchWebDAVStatus(time.Time{}, "失败: "+err.Error())
+		_ = s.Store.PatchWebDAVStatus(time.Time{}, "Failed: "+err.Error())
 		return BackupInfo{}, err
 	}
 	// 额外维护一份 latest.json，方便一键恢复
@@ -1198,7 +1205,7 @@ func (s *Server) BackupToWebDAV(ctx context.Context) (BackupInfo, error) {
 		}
 	}
 
-	_ = s.Store.PatchWebDAVStatus(info.When, fmt.Sprintf("成功：%s（%d 字节）", name, len(payload)))
+	_ = s.Store.PatchWebDAVStatus(info.When, fmt.Sprintf("OK: %s (%d bytes)", name, len(payload)))
 	return info, nil
 }
 

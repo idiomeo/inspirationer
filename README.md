@@ -1,303 +1,379 @@
-# 💡 灵感管理器 · Inspirationer
+# 💡 Inspirationer · 灵感管理器
+
+**English** | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
 > Create, edit, tag, categorize, search — store your inspiration in a timely manner.
-> 随手记录、打标签、分分类、随时搜回来：一个**完全本地运行**的灵感管理工具。
+> A **fully local** inspiration manager: Go backend + browser UI, shipped as a single executable.
 
 ![Go](https://img.shields.io/badge/Go-1.20%2B-00ADD8?logo=go&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D7?logo=windows&logoColor=white)
+![Languages](https://img.shields.io/badge/UI-English%20%7C%20简体中文%20%7C%20日本語-success)
 ![Go deps](https://img.shields.io/badge/Go%20dependencies-none-success)
 ![UI](https://img.shields.io/badge/UI-no%20build%20step-blueviolet)
 ![License](https://img.shields.io/badge/License-Apache--2.0-blue)
 
-**Go 后端 + 浏览器前端**，编译出单个可执行文件：双击即用，**不弹黑色终端窗口**，常驻系统托盘，
-启动后自动用你的默认浏览器打开界面。数据以 JSON 存在本地磁盘，支持 Markdown 编辑、
-AI 自动标题、AI 自动打标、快捷键流水线、全文搜索、WebDAV 定时备份。
+Double-click and you are done: **no console window**, a 💡 icon in the system tray, and your default
+browser opens automatically. Everything is stored as JSON on your own disk — Markdown editing,
+AI-generated titles, AI-assisted tagging, a keyboard-driven pipeline, full-text search and
+scheduled WebDAV backups.
 
-> 不需要 Node、不需要数据库、除 AI 功能外不需要联网。Go 侧**零第三方依赖**（只用标准库，
-> 连系统托盘都是直接调 Win32 API 实现的）。
+> No Node.js, no database, no network access except when *you* use the AI features.
+> The Go side has **zero third-party dependencies** — even the tray icon talks to Win32 directly.
 
-## 界面预览
+## Screenshots
 
-| 主界面（卡片 / 分类 / 标签色块） | Markdown 编辑器 |
+| Main view (cards, categories, coloured tags) | Markdown editor |
 |---|---|
-| ![主界面](docs/01-overview.png) | ![编辑器](docs/02-editor.png) |
+| ![Main view](docs/01-overview.png) | ![Editor](docs/02-editor.png) |
 
-| 流水线打标（只读浏览 + 打标 + `Alt+J` 下一条） | 设置：AI / WebDAV / 快捷键 |
+| Pipeline tagging (read-only view, tag, `Alt+J` for next) | Settings: AI / WebDAV / shortcuts |
 |---|---|
-| ![流水线](docs/03-pipeline.png) | ![设置](docs/05-settings-ai.png) |
+| ![Pipeline](docs/03-pipeline.png) | ![Settings](docs/05-settings-ai.png) |
 
-> 想立刻看到效果：运行 `node scripts/seed-demo.mjs` 会写入一份演示数据（6 条灵感、3 个分类、6 个标签），
-> 不需要时全选删除即可。注意全新克隆的仓库**不含任何数据**（`data/` 不入库），首次启动就是一个空库。
+The UI ships in **English, 简体中文 and 日本語** — the same screen in Japanese and Chinese:
+
+| 日本語 | 简体中文 |
+|---|---|
+| ![Japanese UI](docs/ja-01-overview.png) | ![Chinese UI](docs/zh-01-overview.png) |
 
 ---
 
-## 目录
+## Table of contents
 
-- [30 秒上手](#30-秒上手)
-- [托盘图标与后台行为](#托盘图标与后台行为)
-- [功能总览](#功能总览)
-- [快捷键](#快捷键)
-- [AI 配置](#ai-配置)
-- [WebDAV 自动备份](#webdav-自动备份)
-- [AI 自动打标 & 流水线打标](#ai-自动打标--流水线打标)
-- [搜索](#搜索)
-- [数据存放与备份](#数据存放与备份)
-- [隐私与安全](#隐私与安全)
-- [命令行参数](#命令行参数)
+- [Quick start](#quick-start)
+- [System tray & background behaviour](#system-tray--background-behaviour)
+- [Features](#features)
+- [Internationalization](#internationalization)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [AI configuration](#ai-configuration)
+- [WebDAV backups](#webdav-backups)
+- [AI tagging & pipeline tagging](#ai-tagging--pipeline-tagging)
+- [Search](#search)
+- [Where your data lives](#where-your-data-lives)
+- [Privacy & security](#privacy--security)
+- [Command-line flags](#command-line-flags)
 - [REST API](#rest-api)
-- [开发与测试](#开发与测试)
-- [架构说明](#架构说明)
-- [第三方组件](#第三方组件)
-- [常见问题](#常见问题)
-- [许可证](#许可证)
+- [Development & testing](#development--testing)
+- [Architecture](#architecture)
+- [Third-party components](#third-party-components)
+- [FAQ](#faq)
+- [License](#license)
 
 ---
 
-## 30 秒上手
+## Quick start
 
-### 方式 A：直接下载可执行文件（推荐）
+### Option A — download the executable (recommended)
 
-从 [Releases](../../releases) 下载 `inspirationer.exe`，或自行构建后直接双击：
+Grab `inspirationer.exe` from [Releases](../../releases) (or build it, see below) and double-click it:
 
-1. 程序在后台启动本地服务（默认 `http://127.0.0.1:8420/`）；
-2. **自动用你的默认浏览器打开界面**；
-3. 屏幕右下角托盘区出现一个 💡 图标 —— 全程没有黑色终端窗口。
+1. the service starts in the background at `http://127.0.0.1:8420/`;
+2. **your default browser opens automatically**;
+3. a 💡 icon appears in the system tray — and no console window ever shows up.
 
-### 方式 B：从源码构建
+### Option B — build from source
 
 ```powershell
 git clone https://github.com/idiomeo/inspirationer.git
 cd inspirationer
-.\build.ps1              # 构建 GUI 版（无控制台窗口）
-.\inspirationer.exe      # 启动：自动开浏览器 + 托盘常驻
+.\build.ps1              # GUI build (no console window)
+.\inspirationer.exe
 ```
 
-没有 PowerShell 也可以用原生命令：
+Without PowerShell:
 
 ```powershell
 go build -trimpath -ldflags "-s -w -H=windowsgui" -o inspirationer.exe .
 .\inspirationer.exe
 ```
 
-默认端口 `8420`，被占用时自动顺延到 `8421`、`8422`…（日志里会打印真实地址）。
+The default port is `8420`; if it is taken the app walks up to `8421`, `8422`… (the real address is
+printed in the log).
 
 ---
 
-## 托盘图标与后台行为
+## System tray & background behaviour
 
-| 操作 | 效果 |
+| Action | Effect |
 |---|---|
-| 左键单击 💡 | 打开界面（浏览器） |
-| 右键 → 打开灵感管理器 | 同上 |
-| 右键 → 打开数据目录 | 在资源管理器里打开 `data` 目录 |
-| 右键 → 立即备份到 WebDAV | 立刻上传一次全库备份，结果用气泡提示 |
-| 右键 → 查看日志文件 | 打开 `data\logs\inspirationer.log` |
-| 右键 → 退出 | 优雅关闭服务并退出（数据落盘） |
+| Left-click 💡 | Open the UI in your browser |
+| Right-click → Open Inspirationer | Same as above |
+| Right-click → Open data folder | Opens the `data` folder in Explorer |
+| Right-click → Back up to WebDAV now | Uploads a full backup immediately, reports via balloon tip |
+| Right-click → View log file | Opens `data\logs\inspirationer.log` |
+| Right-click → Quit | Graceful shutdown (data is flushed to disk) |
 
-其它行为：
+Other behaviour:
 
-- **重复启动不会起第二个服务**：再点一次 exe，它会发现已有实例并直接打开已有界面（`-single-instance=false` 可关掉）。
-- **数据在程序同级的 `data\` 目录**，日志在 `data\logs\inspirationer.log`（超过 4MB 自动滚动为 `.1`）。
-- **万一托盘不可用**（极少数受限环境，见[常见问题](#常见问题)），程序会自动打开日志控制台窗口并弹一次说明——服务照常运行，不会变成"看不见又退不掉"的进程。
-- 需要看实时日志：用 `inspirationer-console.exe`，或给 exe 加 `-console`。
+- **Second launches never start a second service** — starting the exe again detects the running
+  instance and simply opens its UI (`-single-instance=false` disables this).
+- **Data lives in `data\` next to the executable**; the log is `data\logs\inspirationer.log`
+  (rotated to `.1` at 4 MB).
+- **If the tray is unavailable** (rare, restricted environments — see [FAQ](#faq)) the app opens a
+  log console window and shows a one-time notice instead. The service keeps running; you never end
+  up with an invisible process you cannot quit.
+- Need live logs? Use `inspirationer-console.exe`, or pass `-console` to the normal exe.
 
 ---
 
-## 功能总览
+## Features
 
-| 能力 | 说明 |
+| Area | Details |
 |---|---|
-| **灵感片段** | 点击「＋ 新建灵感」或按 `Alt+N`；标题可留空，正文支持完整 Markdown |
-| **Markdown 编辑** | 内置开源编辑器 EasyMDE（CodeMirror + marked）：标题 / 列表 / 引用 / 代码块 / 表格 / 图片 / 预览 / 全屏，工具栏图标为内联 CSS 字形，不依赖 CDN |
-| **自动标题** | 未填标题时：已配置 AI → 由 AI 总结生成；未配置 → 截取正文前 N 个字（默认 10，可改）。卡片上会标注标题来源 |
-| **标签与分类** | 每条灵感可挂多个标签 + 1 个分类，色块 chip 显示在标题正下方；自动配色或自定义取色，侧栏右键即可改名改色 |
-| **搜索** | 全文 / 仅标题 / 仅正文三档；多关键词 AND；可先在侧栏选分类或标签，实现「分类内单独搜索」 |
-| **快捷键** | 全套可自定义（默认 `Alt` 组合，避开浏览器占用键），支持「新建 → 写 → 保存」的流水线式记录 |
-| **AI 自动打标** | 勾选/全选灵感 → AI 逐条给出标签与分类建议 → 弹窗内可逐条勾选、追加或替换后再应用 |
-| **流水线打标** | 选中灵感 → 逐条只读浏览 → 打标签/选分类 → `Alt+J` 下一条；每条即时落盘 |
-| **全选** | 顶部「全选」复选框 / `Alt+A` / AI 弹窗内「全选建议」 |
-| **整理** | 置顶 📌、归档 🗄️、批量归档/删除、按分类或标签筛选、三种排序 |
-| **本地持久化** | JSON 文件实时原子写盘；每次保存写本地快照（保留 30 份）；文件损坏时启动自动回退到最近可用快照 |
-| **WebDAV 备份** | 定时自动备份 + 立即备份 + 列远端备份 + 合并/覆盖恢复 + 远端份数自动清理 |
-| **数据迁移** | 一键导出整库 JSON、导入（合并/覆盖），导入与恢复前自动创建本地快照 |
-| **界面** | 深色/浅色主题、卡片 Markdown 预览开关、删除二次确认、侧栏实时统计 |
+| **Snippets** | “＋ New snippet” or `Alt+N`; the title is optional and the body is full Markdown |
+| **Markdown editing** | Bundled EasyMDE (CodeMirror + marked): headings, lists, quotes, code blocks, tables, images, preview, fullscreen. Toolbar icons are inline CSS glyphs — no CDN |
+| **Automatic titles** | Leave the title empty: with AI configured it is summarised by the model, otherwise the first N characters of the body are used (default 10, configurable). Cards show where the title came from |
+| **Tags & categories** | Any number of tags plus one category per snippet, shown as coloured chips right under the title; auto-assigned colours or your own, rename/recolour by right-clicking the sidebar |
+| **Search** | Full text / title only / body only, multi-keyword AND, and “search inside one category” by selecting it in the sidebar first |
+| **Shortcuts** | Fully configurable (defaults use `Alt` so they never clash with browser shortcuts), enabling a create → write → save pipeline |
+| **AI auto-tagging** | Select snippets (or select all) → AI proposes tags and a category per snippet → review, adjust, then apply |
+| **Pipeline tagging** | Process the selection one snippet at a time: read, tag, `Alt+J` for the next; every step is saved immediately |
+| **Select all** | Toolbar checkbox / `Alt+A` / “Select all suggestions” inside the AI dialog |
+| **Organising** | Pin 📌, archive 🗄️, bulk archive/delete, filter by category or tag, three sort orders |
+| **Local persistence** | Atomic JSON writes on every change; a local snapshot after every save (30 kept); automatic recovery from the newest snapshot if a file gets corrupted |
+| **WebDAV backup** | Scheduled automatic backup, backup now, list remote copies, merge/replace restore, automatic pruning of old backups |
+| **Data portability** | Export the whole library as JSON, import it back (merge or replace); a local snapshot is taken before every import/restore |
+| **Interface** | Dark/light theme, optional Markdown preview on cards, delete confirmation, live sidebar counters |
 
 ---
 
-## 快捷键
+## Internationalization
 
-默认全部使用 `Alt` 组合，避开浏览器自带快捷键（`Ctrl+N/T/W/S/P/F/D`、`F5`、`Alt+F/E/D/Home/←/→` 等）。
+The UI ships with **English, Simplified Chinese and Japanese**, and the language is a normal setting.
 
-| 动作 | 默认键 | 说明 |
-|------|--------|------|
-| 新建灵感 | `Alt+N` | 任意位置打开编辑窗口 |
-| 保存灵感 | `Alt+S` | 编辑窗口内保存并关闭 |
-| 聚焦搜索 | `Alt+K` | 跳到搜索框并全选内容 |
-| 全选 / 取消全选 | `Alt+A` | 选中当前列表全部灵感 |
-| 流水线下一条 | `Alt+J` | 保存当前条目并进入下一条 |
-| 切换预览 | `Alt+P` | 编辑器 Markdown 预览 |
-| 打开设置 | `Alt+O` | |
-| 关闭弹窗 | `Escape` | 编辑器全屏时先退出全屏 |
+- **Where to switch:** Settings → 🎨 Appearance → **Language**. The switch applies instantly, no
+  reload needed.
+- **Follow browser** (default): `auto` picks the best match from `navigator.languages`
+  (e.g. `zh-Hans` → 简体中文, `ja-JP` → 日本語) and falls back to English.
+- **What is translated:** every label, button, placeholder, toast, dialog, editor toolbar tooltip,
+  the relative timestamps (“3 minutes ago” / “3 分前” / “3 分钟前”), the **system tray menu**, the
+  Windows dialogs, and the **REST API error messages**.
+- **What is not translated:** your own content — snippets, titles, tag and category names are yours.
+- **Persistence:** the choice is stored in `data/settings.json` (`ui.language`) and mirrored to
+  `localStorage` so the first paint is already in the right language.
 
-**自定义**：设置 → ⌨️ 快捷键 → 点击输入框 → 直接按下组合键即可录制（`Backspace` 清空）。重复的快捷键会标红提示。
+### Adding or improving a language
+
+1. **Front-end strings** live in [`web/i18n.js`](web/i18n.js): three flat dictionaries keyed
+   `en` / `zh-CN` / `ja`. Copy a block, translate the values, keep the keys and the `{placeholders}`
+   (`{n}`, `{name}`, `{time}`…). Missing keys fall back to English automatically, so a partial
+   translation is fine.
+2. **Back-end strings** (API errors, tray menu, native dialogs) live in
+   [`internal/i18n/i18n.go`](internal/i18n/i18n.go) as `key → language → text`.
+3. Register the new code in `SUPPORTED_LANGS` (`web/app.js`), `i18n.Supported()`
+   (`internal/i18n/i18n.go`), the `Language` select in `web/index.html`, and the `ui.language`
+   whitelist in `internal/model/model.go`.
+
+### API language negotiation
+
+Every endpoint honours the request language, in this order:
+
+1. `X-Lang` header — the web UI sends its current language on every request;
+2. `?lang=xx` query parameter;
+3. `Accept-Language` header;
+4. otherwise the saved `ui.language` setting, falling back to English.
+
+```bash
+curl -s -X POST http://127.0.0.1:8420/api/ai/suggest \
+  -H 'X-Lang: ja' -H 'Content-Type: application/json' -d '{"ids":["nope"]}'
+# {"error":"AI 機能が無効です。先に「設定 → AI」で API を設定してください"}
+```
 
 ---
 
-## AI 配置
+## Keyboard shortcuts
 
-设置 → 🤖 AI：
+All defaults use `Alt` combinations that browsers leave alone (avoiding `Ctrl+N/T/W/S/P/F/D`, `F5`,
+`Alt+F/E/D/Home/←/→`, …).
 
-1. 勾选 **启用 AI 功能**；
-2. 选一个「服务预设」，或手动填 `API Base URL` + `模型`；
-3. 填 `API Key`；
-4. 点 **🔌 测试连接** 确认可用。
+| Action | Default | Notes |
+|---|---|---|
+| New snippet | `Alt+N` | Opens the editor from anywhere |
+| Save snippet | `Alt+S` | Saves and closes the editor |
+| Focus search | `Alt+K` | Jumps to the search box and selects it |
+| Select all / none | `Alt+A` | Selects every snippet in the list |
+| Pipeline: next | `Alt+J` | Saves the current snippet and moves on |
+| Toggle preview | `Alt+P` | Markdown preview in the editor |
+| Open settings | `Alt+O` | |
+| Close dialog | `Escape` | Leaves editor fullscreen first |
 
-内置预设（任何兼容 OpenAI `chat/completions` 协议的服务都能用）：
+**Customising:** Settings → ⌨️ Shortcuts → click a box → press the combination you want
+(`Backspace` clears it). Duplicates are highlighted in red.
 
-| 服务 | Base URL | 模型示例 |
-|------|----------|----------|
+---
+
+## AI configuration
+
+Settings → 🤖 AI:
+
+1. tick **Enable AI features**;
+2. pick a **preset** or fill in `API Base URL` + `Model` yourself;
+3. paste your `API Key`;
+4. hit **🔌 Test connection**.
+
+Built-in presets (anything that speaks the OpenAI `chat/completions` protocol works):
+
+| Service | Base URL | Example model |
+|---|---|---|
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
 | Moonshot Kimi | `https://api.moonshot.cn/v1` | `moonshot-v1-8k` |
-| 阿里通义 | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
-| 智谱 GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
-| Ollama（本地） | `http://127.0.0.1:11434/v1` | `qwen2.5:7b` |
-| One-API / New-API | `http://127.0.0.1:3000/v1` | 任意 |
+| Qwen (Alibaba) | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` |
+| Zhipu GLM | `https://open.bigmodel.cn/api/paas/v4` | `glm-4-flash` |
+| Ollama (local) | `http://127.0.0.1:11434/v1` | `qwen2.5:7b` |
+| One-API / New-API | `http://127.0.0.1:3000/v1` | any |
 
-> Ollama 等本地服务不需要 Key；Base URL 含 `localhost`/`127.0.0.1` 时允许留空。
-> **API Key 只写入本机 `data/settings.json`**，该目录已被 `.gitignore` 忽略，不会进仓库、不会上传任何地方。
+> Local servers such as Ollama need no key; keys may stay empty when the Base URL contains
+> `localhost` / `127.0.0.1`.
+> **The API key is only written to your local `data/settings.json`**, which is git-ignored — it is
+> never committed and never uploaded anywhere.
 
-**AI 参与的三件事**：① 无标题时生成标题；② 批量生成标签与分类建议；③ 编辑器里的「✨ AI 生成标题」。
-
----
-
-## WebDAV 自动备份
-
-设置 → ☁️ WebDAV 备份：
-
-| 字段 | 说明 |
-|------|------|
-| 启用自动备份 | 服务运行期间按间隔自动上传整库备份 |
-| WebDAV 地址 | 例如坚果云 `https://dav.jianguoyun.com/dav/` |
-| 用户名 / 密码 | 坚果云、Nextcloud 等请用**应用密码**，不是登录密码 |
-| 远端目录 | 默认 `inspirationer`，不存在会自动 MKCOL 创建 |
-| 自动备份间隔 | 单位分钟，默认 60 |
-| 远端最多保留份数 | 超出后自动删除最旧的备份（默认 10） |
-
-常用服务地址：
-
-- **坚果云**：`https://dav.jianguoyun.com/dav/`（账号邮箱 + 应用密码）
-- **Nextcloud / ownCloud**：`https://你的域名/remote.php/dav/files/用户名/`
-- **群晖 Synology**：`https://你的域名:5006/灵感备份/`（WebDAV Server 套件）
-- **Alist**：`http://127.0.0.1:5244/dav/`
-- **通用 WebDAV**：任意支持 `PROPFIND/PUT/GET/MKCOL/DELETE` 的地址
-
-按钮：**测试连接**（可用未保存的表单值测试）、**立即备份**、**从远端恢复**（逐条提供「合并恢复」与「覆盖恢复」，覆盖前自动创建本地快照）、**创建本地快照**。
-
-远端文件名：`inspirationer-backup-YYYYMMDD-HHMMSS.json`，另有 `latest.json` 始终指向最新备份。
+**AI is involved in exactly three things:** ① generating a title when the title is empty,
+② proposing tags and a category, ③ the “✨ AI title” button inside the editor.
 
 ---
 
-## AI 自动打标 & 流水线打标
+## WebDAV backups
 
-两者都是**用户主动点击**才触发。先勾选灵感，或点顶部「全选」/ 按 `Alt+A`。
+Settings → ☁️ WebDAV backup:
 
-### 🤖 AI 自动打标（批量）
+| Field | Meaning |
+|---|---|
+| Enable automatic backup | While running, upload a full backup at the interval below |
+| WebDAV URL | e.g. `https://dav.jianguoyun.com/dav/` (Nutstore) |
+| Username / password | Use an **app password** for Nutstore, Nextcloud, … rather than your login password |
+| Remote folder | Defaults to `inspirationer`; created with MKCOL if missing |
+| Backup interval | Minutes, default 60 |
+| Keep at most | Old backups beyond this count are deleted remotely (default 10) |
 
-1. 勾选若干灵感（可全选）；
-2. 点工具栏或批量条上的「🤖 AI 自动打标」；
-3. AI 逐条阅读内容，弹窗给出建议：标题、2~4 个标签、1 个分类、一句话摘要；
-4. 可逐条取消勾选、逐个标签取消、切换「追加 / 替换」标签模式，或「全选建议」；
-5. 点「应用勾选的建议」写入。
+Known-good endpoints:
 
-AI 会拿到「已有标签 / 已有分类」列表，优先**复用已有标签**（忽略大小写），确实需要时才新建并自动分配颜色。
+- **Nutstore (坚果云)**: `https://dav.jianguoyun.com/dav/` (email + app password)
+- **Nextcloud / ownCloud**: `https://your-host/remote.php/dav/files/<user>/`
+- **Synology**: `https://your-host:5006/<share>/` (WebDAV Server package)
+- **Alist**: `http://127.0.0.1:5244/dav/`
+- **Anything else** that supports `PROPFIND/PUT/GET/MKCOL/DELETE`
 
-### ⚡ 流水线打标（逐条）
+Buttons: **Test connection** (works with unsaved form values), **Back up now**, **Restore from
+remote** (per-file “Merge restore” / “Replace restore”, with a local snapshot taken first) and
+**Create local snapshot**.
 
-1. 勾选要处理的灵感 → 点「⚡ 流水线打标」；
-2. 左侧只读展示当前灵感的 Markdown 内容，右侧选择分类、点选或新建标签；
-3. 按 `Alt+J`（或点「保存并进入下一条」）→ 立即写入当前条目并跳到下一条；
-4. 「跳过」不保存直接下一条，「← 上一条」回退，「结束流水线」随时退出。
-
-进度显示在标题右侧（如 `3 / 12`），每条保存即时生效，中途关闭也不会丢。
-
----
-
-## 搜索
-
-顶部搜索框（`Alt+K` 聚焦）：
-
-- **范围选择**：`全文匹配`（标题 + 正文 + 标签名 + 分类名）、`仅标题`、`仅正文`；
-- **多关键词**：空格分隔，要求**全部命中**，例如 `markdown 写作`；
-- **作用域**：先点侧栏某个分类 / 标签，再搜索 → 即「在某个分类中单独搜索」；
-- 大小写不敏感；输入即搜（220ms 防抖）；点 ✕ 清空。
-
-侧栏快捷视图：全部灵感、未分类、置顶、归档。
+Remote files are named `inspirationer-backup-YYYYMMDD-HHMMSS.json`, plus a `latest.json` that always
+points at the newest backup.
 
 ---
 
-## 数据存放与备份
+## AI tagging & pipeline tagging
 
-默认数据目录是程序旁边的 `./data`（可用 `-data` 指定；若当前目录不可写会自动退回 exe 同级目录）。
+Both are **explicitly triggered by you** — nothing is ever modified silently.
+
+### 🤖 AI auto-tagging (batch)
+
+1. select snippets (or press `Alt+A`);
+2. click “🤖 AI auto-tag” in the toolbar or the bulk bar;
+3. review the proposals — title, 2–4 tags, one category and a one-line summary per snippet;
+4. untick anything you disagree with, choose append/replace for tags, or “Select all suggestions”;
+5. click “Apply selected suggestions”.
+
+The model receives your existing tags and categories, so it **reuses them** (case-insensitively)
+instead of inventing near-duplicates; new ones get an automatic colour.
+
+### ⚡ Pipeline tagging (one by one)
+
+1. select snippets → “⚡ Pipeline tagging”;
+2. the left side shows the snippet read-only, the right side lets you pick a category and toggle or
+   create tags;
+3. press `Alt+J` (or “Save and continue”) to save and advance;
+4. “Skip” moves on without saving, “← Previous” goes back, “End pipeline” stops at any time.
+
+Progress is shown as `3 / 12`; every snippet is persisted as you go, so closing the window loses
+nothing.
+
+---
+
+## Search
+
+The search box (`Alt+K` to focus):
+
+- **Scope:** `Full text` (title + body + tag names + category names), `Title only`, `Body only`;
+- **Multiple keywords:** space-separated, all must match (e.g. `markdown writing`);
+- **Scoped search:** pick a category or tag in the sidebar first, then search — i.e. “search inside
+  one category”;
+- case-insensitive, debounced (220 ms), `✕` clears it.
+
+Sidebar quick views: all snippets, uncategorized, pinned, archived.
+
+---
+
+## Where your data lives
+
+The default data folder is `./data` next to the executable (`-data` overrides it; if the working
+directory is not writable the app falls back to the executable’s folder).
 
 ```
 data/
-├── snippets.json      # 所有灵感（标题、正文、标签 ID、分类 ID、时间戳、标题来源）
-├── tags.json          # 标签（名称 + 颜色）
-├── categories.json    # 分类（名称 + 颜色）
-├── settings.json      # AI / WebDAV / 快捷键 / 外观（⚠️ 可能含 API Key 与 WebDAV 密码）
-├── runtime.json       # 运行期状态（进程号与访问地址，用于单实例识别）
+├── snippets.json      # snippets: title, body, tag IDs, category ID, timestamps, title source
+├── tags.json          # tags (name + colour)
+├── categories.json    # categories (name + colour)
+├── settings.json      # AI / WebDAV / shortcuts / UI  (⚠️ may contain your API key and password)
+├── runtime.json       # PID + URL, used to find a running instance
 ├── logs/
 │   └── inspirationer.log
 └── backups/
-    └── snapshot-YYYYMMDD-HHMMSS.json   # 本地快照，保留最近 30 份
+    └── snapshot-YYYYMMDD-HHMMSS.json   # last 30 local snapshots
 ```
 
-- 所有写操作都是「临时文件 + 原子重命名」，且每次改动立即写盘；
-- 启动时若距上次快照超过 6 小时会自动补一份；
-- 设置 → 💾 数据：可**导出整库备份**（浏览器下载 JSON）、**导入备份**（合并 / 覆盖）；
-- 导入与恢复前都会自动创建本地快照，方便回滚。
+- Every write goes through “temp file + atomic rename”, and changes are flushed immediately.
+- A snapshot is added on startup if the newest one is older than 6 hours.
+- Settings → 💾 Data lets you **export the whole library** (downloaded as JSON) and **import** it
+  (merge or replace); both paths take a local snapshot first so you can always roll back.
 
 ---
 
-## 隐私与安全
+## Privacy & security
 
-- **数据完全属于你**：所有灵感、标签、分类、设置都存在本机 `data/` 目录，程序不含任何统计、遥测或后台上报。
-- **不联网**：只有在你主动使用 AI 功能（调用你配置的 API）或 WebDAV 备份时才会发起网络请求。
-- **密钥不出本机**：AI API Key 与 WebDAV 密码只写入 `data/settings.json`；`.gitignore` 已排除 `data/`、`logs/`、`release/`，因此**不会**被提交到仓库。
-- **前端全离线**：EasyMDE / marked / DOMPurify 全部内置于二进制内，页面不引用任何 CDN；Markdown 渲染结果会经 DOMPurify 过滤，避免 XSS。
-- **服务默认只监听 `127.0.0.1`**，且**没有登录鉴权**（定位是本机单用户工具）。若要 `-addr 0.0.0.0:8420` 暴露到局域网/公网，请自行加反向代理与认证。
-- **本仓库不含任何密钥或个人信息**，`git log` 中也没有（`data/` 从未入库）。
-
-如果你要把自己的 `data/` 目录分享出去做备份，请先检查 `settings.json` 里的密钥；更推荐用程序内的「导出整库备份」并注意脱敏。
+- **Your data stays yours.** Everything lives in the local `data/` folder; there is no telemetry,
+  no analytics and no phoning home.
+- **No network unless you ask.** Requests are only made when you use an AI feature (to the endpoint
+  *you* configured) or a WebDAV backup.
+- **Secrets stay local.** The AI API key and WebDAV password are written to `data/settings.json`,
+  which `.gitignore` excludes — it is never committed. The repository contains no keys and no
+  personal paths, and neither does its history.
+- **Fully offline front end.** EasyMDE, marked and DOMPurify are embedded in the binary; the page
+  references no CDN, and rendered Markdown is filtered through DOMPurify to prevent XSS.
+- **The service listens on `127.0.0.1` by default and has no authentication** — it is a
+  single-user desktop tool. If you expose it with `-addr 0.0.0.0:8420`, put a reverse proxy with
+  authentication in front of it.
+- The test scripts only contain throwaway credentials (`mock-user` / `mock-pass`,
+  `mock-api-key`) that point at local mock servers on `127.0.0.1`.
 
 ---
 
-## 命令行参数
+## Command-line flags
 
 ```
 inspirationer.exe [flags]
 
-  -addr string              监听地址（默认 "127.0.0.1:8420"，被占用时自动顺延）
-  -data string              数据目录（默认 "./data"，不可写时退回 exe 同级目录）
-  -open                     启动成功后自动打开浏览器（默认 true）
-  -tray                     显示系统托盘图标（默认 true，Windows）
-  -console                  额外显示控制台窗口以查看实时日志（GUI 版默认没有控制台）
-  -single-instance          只允许一个实例，重复启动会打开已有实例（默认 true）
-  -dev-web string           从磁盘目录加载前端资源（开发调试用，默认用内嵌资源）
-  -version                  打印版本号
+  -addr string              listen address (default "127.0.0.1:8420", walks up if the port is busy)
+  -data string              data folder (default "./data", falls back to the exe folder if unwritable)
+  -open                     open the browser after a successful start (default true)
+  -tray                     show the system tray icon (default true, Windows)
+  -console                  additionally show a console window for live logs
+  -single-instance          allow only one instance; later launches open the running one (default true)
+  -dev-web string           serve the front end from a folder instead of the embedded copy
+  -version                  print the version and exit
 ```
 
-例：
+Examples:
 
 ```powershell
-# 换个端口 + 数据放到 D 盘 + 不自动开浏览器
-.\inspirationer.exe -addr 127.0.0.1:9000 -data D:\灵感数据 -open=false
+# different port, data on D:, do not open a browser
+.\inspirationer.exe -addr 127.0.0.1:9000 -data D:\inspiration -open=false
 
-# 局域网访问（注意：没有登录鉴权，公网暴露前请自行加反代与认证）
+# expose to the LAN (no auth — add a proxy before exposing it publicly)
 .\inspirationer.exe -addr 0.0.0.0:8420
 
-# 想看实时日志
+# watch the logs
 .\inspirationer.exe -console
 ```
 
@@ -305,67 +381,72 @@ inspirationer.exe [flags]
 
 ## REST API
 
-前端是一个纯静态页面，所有能力都通过 REST API 暴露，方便脚本化 / 二次开发：
+The front end is a plain static page; everything it does is available over REST, which makes
+scripting straightforward. All responses are JSON; add `X-Lang: en|zh-CN|ja` for localized errors.
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/bootstrap` | 一次性拉取设置、标签、分类、统计 |
-| GET | `/api/snippets` | 列表 / 搜索，支持 `query` `mode` `categoryId` `tagIds` `archive` `sort` `limit` |
-| POST | `/api/snippets` | 新建（`title` 留空时自动生成标题） |
-| GET/PUT/DELETE | `/api/snippets/{id}` | 单条读取 / 整体更新 / 删除 |
-| PATCH | `/api/snippets/{id}` | 局部更新（`title` `content` `tags` `categoryId` `pinned` `archived` `addTags`） |
-| POST | `/api/snippets/bulk` | 批量：`delete` `assign` `archive` `unarchive` `pin` `unpin` |
-| GET/POST | `/api/tags`、`/api/categories` | 列表 / 新建 |
-| PUT/DELETE | `/api/tags/{id}`、`/api/categories/{id}` | 改名改色 / 删除 |
-| GET/PUT | `/api/settings` | 读取 / 保存设置 |
-| POST | `/api/ai/title` | 生成标题 |
-| POST | `/api/ai/suggest` | 批量生成标签与分类建议 |
-| POST | `/api/ai/apply` | 应用建议 |
-| POST | `/api/ai/test` | 测试 AI 连通性 |
-| POST | `/api/webdav/test` \| `/api/webdav/backup` \| `/api/webdav/restore` | 测试 / 备份 / 恢复 |
-| GET | `/api/webdav/list` | 远端备份列表 |
-| GET | `/api/backup/export` \| POST `/api/backup/import` \| POST `/api/backup/local` | 导出 / 导入 / 本地快照 |
-| GET | `/api/stats` | 统计信息 |
-
-示例：
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/api/bootstrap` | Settings, tags, categories and counts in one call |
+| GET | `/api/snippets` | List / search: `query` `mode` `categoryId` `tagIds` `archive` `sort` `limit` |
+| POST | `/api/snippets` | Create (title auto-generated when empty) |
+| GET/PUT/DELETE | `/api/snippets/{id}` | Read / replace / delete one snippet |
+| PATCH | `/api/snippets/{id}` | Partial update (`title` `content` `tags` `categoryId` `pinned` `archived` `addTags`) |
+| POST | `/api/snippets/bulk` | Batch: `delete` `assign` `archive` `unarchive` `pin` `unpin` |
+| GET/POST | `/api/tags`, `/api/categories` | List / create |
+| PUT/DELETE | `/api/tags/{id}`, `/api/categories/{id}` | Rename, recolour, delete |
+| GET/PUT | `/api/settings` | Read / write settings |
+| POST | `/api/ai/title` | Generate a title |
+| POST | `/api/ai/suggest` | Propose tags and categories for many snippets |
+| POST | `/api/ai/apply` | Apply proposals |
+| POST | `/api/ai/test` | Check AI connectivity |
+| POST | `/api/webdav/test` \| `/api/webdav/backup` \| `/api/webdav/restore` | Test / back up / restore |
+| GET | `/api/webdav/list` | List remote backups |
+| GET | `/api/backup/export` \| POST `/api/backup/import` \| POST `/api/backup/local` | Export / import / local snapshot |
+| GET | `/api/stats` | Counters |
 
 ```bash
 curl -X POST http://127.0.0.1:8420/api/snippets \
   -H "Content-Type: application/json" \
-  -d '{"content":"随手记：用 WebDAV 做灵感备份","tags":[],"categoryId":""}'
+  -d '{"content":"Note to self: use WebDAV for backups","tags":[],"categoryId":""}'
 ```
 
 ---
 
-## 开发与测试
+## Development & testing
 
 ```powershell
-.\build.ps1              # GUI 版（-H=windowsgui，无控制台窗口）
-.\build.ps1 -Console     # 额外产出 inspirationer-console.exe（带控制台，便于排查）
-.\build.ps1 -Icon        # 重新生成图标与 Windows 资源（需要 python + Pillow + rsrc）
-.\dev.ps1                # 开发模式：前端直接从 web/ 读取，改完刷新浏览器即可（无需重编）
+.\build.ps1              # GUI build (-H=windowsgui, no console window)
+.\build.ps1 -Console     # also produce inspirationer-console.exe (console, for troubleshooting)
+.\build.ps1 -Icon        # regenerate the icon and Windows resources (needs python + Pillow + rsrc)
+.\dev.ps1                # dev mode: serve the front end from web/, just refresh the browser
 ```
 
-**测试**（需要先启动服务；AI/WebDAV/UI 测试还需要模拟服务）：
+**Tests** (start the server first; the AI/WebDAV/UI suites also need the mock services):
 
 ```powershell
-# 终端 1：服务（测试时关掉托盘与自动开浏览器，避免打扰）
+# terminal 1 — the app (no tray, no browser, so tests are not disturbed)
 .\inspirationer.exe -open=false -tray=false
 
-# 终端 2：模拟 AI + 模拟 WebDAV（仅测试用，全部是本地假凭据）
+# terminal 2 — mock AI + mock WebDAV (local throwaway credentials only)
 node scripts\mock-services.mjs
 
-# 终端 3：跑测试
-go test ./...                      # 单元测试：托盘结构体布局、ICO 解析、Win32 函数解析自检
-node scripts\api-smoke.mjs         # 56 项：CRUD、标签分类、搜索、批量、备份导入导出
-node scripts\ai-webdav-test.mjs    # 33 项：AI 标题、AI 打标、WebDAV 备份/清理/恢复
-node scripts\ui-test.mjs           # 48 项：无头浏览器驱动真实 UI（含全部快捷键与可见性断言）
-node scripts\auto-backup-test.mjs  # 定时自动备份（约 1~2 分钟）
+# terminal 3 — the suites
+node scripts\check-i18n.mjs         # translation completeness: 282 keys × en/zh-CN/ja
+go test ./...                      # unit tests: tray struct layout, ICO parsing, Win32 resolution
+node scripts\api-smoke.mjs         # 62 checks: CRUD, tags, search, bulk ops, backup, i18n errors
+node scripts\ai-webdav-test.mjs    # 33 checks: AI titles, AI tagging, WebDAV backup/prune/restore
+node scripts\ui-test.mjs           # 61 checks: real UI in a headless browser, incl. language switching
+node scripts\auto-backup-test.mjs  # scheduled backup (takes 1–2 minutes)
 ```
 
-- `ui-test.mjs` 会自动查找 Edge/Chrome，用 CDP 驱动无头浏览器，验证渲染、快捷键、AI 弹窗、流水线、设置面板，并断言**无未捕获 JS 异常与 console.error**；
-- `go test` 里的 `TestWin32ProcsResolve` 会逐个解析所有用到的 Win32 函数，**DLL 写错或函数名拼错会直接测试失败**（而不是等到运行时 panic）；
-- 想真正建一个托盘图标验证（会在通知区留下图标，随后自动移除）：
+- `ui-test.mjs` finds Edge/Chrome automatically and drives a headless browser over CDP. It verifies
+  rendering, every shortcut, the AI dialog, the pipeline, the settings panel, **switching between
+  English/Chinese/Japanese** (including that no raw translation key ever leaks into the DOM and that
+  the choice survives a reload), and asserts there are **no uncaught JS exceptions or console
+  errors**.
+- `go test` includes `TestWin32ProcsResolve`, which resolves every Win32 function the app uses —
+  a wrong DLL or a typo in a symbol name fails the test instead of panicking at runtime.
+- To actually create a tray icon (it is removed again right away):
 
 ```powershell
 $env:IH_TRAY_TEST=1; go test ./internal/tray/ -run TestTrayStartInThisEnvironment -v
@@ -373,88 +454,108 @@ $env:IH_TRAY_TEST=1; go test ./internal/tray/ -run TestTrayStartInThisEnvironmen
 
 ---
 
-## 架构说明
+## Architecture
 
 ```
 inspirationer/
-├── main.go                     # 入口：参数、单实例、托盘、日志文件、内嵌前端、优雅关闭
-├── assets/                     # app.ico + app.manifest（编译进 exe 的图标与清单）
-├── rsrc_windows_amd64.syso     # 由 rsrc 生成，go build 自动链接（图标 / 清单 / DPI 感知）
+├── main.go                     # entry point: flags, single instance, tray, logging, graceful exit
+├── assets/                     # app.ico + app.manifest (compiled into the exe)
+├── rsrc_windows_amd64.syso     # generated by rsrc; go build links it automatically
 ├── internal/
-│   ├── model/model.go          # 数据结构与默认设置
-│   ├── store/store.go          # JSON 持久化、查询、批量操作、备份导入导出
-│   ├── ai/ai.go                # OpenAI 兼容客户端（标题生成 / 结构化打标建议）
-│   ├── webdav/webdav.go        # WebDAV 客户端（MKCOL/PUT/GET/PROPFIND/DELETE）
-│   ├── server/server.go        # 路由与全部 HTTP 处理器
-│   ├── platform/               # Win32 小工具：消息框 / 打开链接 / 单实例 / 控制台 / DPI
-│   └── tray/                   # 系统托盘图标与右键菜单（纯 syscall，无第三方库）
-├── web/                        # 前端（原生 JS，无构建步骤）
+│   ├── model/model.go          # data structures and defaults
+│   ├── store/store.go          # JSON persistence, queries, bulk ops, import/export
+│   ├── ai/ai.go                # OpenAI-compatible client (titles, structured tag proposals)
+│   ├── webdav/webdav.go        # WebDAV client (MKCOL/PUT/GET/PROPFIND/DELETE)
+│   ├── server/server.go        # routing and all HTTP handlers
+│   ├── i18n/i18n.go            # back-end message catalogue (en / zh-CN / ja) + error codes
+│   ├── platform/               # small Win32 helpers: message box, open URL, single instance, DPI
+│   └── tray/                   # tray icon and context menu (pure syscall, no third-party code)
+├── web/                        # front end (vanilla JS, no build step)
 │   ├── index.html  styles.css  app.js
-│   └── vendor/                 # EasyMDE + marked + DOMPurify（本地内置，离线可用）
-├── scripts/                    # 测试脚本 + 图标生成脚本
-└── docs/                       # 界面截图
+│   ├── i18n.js                 # UI strings: en / zh-CN / ja
+│   └── vendor/                 # EasyMDE + marked + DOMPurify (bundled, works offline)
+├── scripts/                    # test suites + icon generator
+└── docs/                       # screenshots
 ```
 
-几点设计取舍：
+Design decisions worth knowing:
 
-- **单文件分发**：前端用 `go:embed` 打进二进制，双击 exe 即可用，不需要附带资源目录；
-- **零第三方 Go 依赖**：托盘、消息框、单实例、打开浏览器全部用标准库 `syscall` 直接调 Win32，避免 CGO 与依赖树；
-- **数据可迁移性优先**：用人类可读的 JSON 而不是数据库，坏了一个文件也能手改，还能直接丢进网盘同步；
-- **写盘安全**：临时文件 + 原子重命名 + 本地快照 + 损坏自动回退。
-
----
-
-## 第三方组件
-
-前端仅内置以下开源库（均为本地文件，无 CDN 依赖）：
-
-| 组件 | 版本 | 用途 | 许可 |
-|------|------|------|------|
-| [EasyMDE](https://github.com/Ionaru/easy-markdown-editor) | 2.18.0 | Markdown 编辑器（内置 CodeMirror + marked） | MIT |
-| [marked](https://github.com/markedjs/marked) | 12.0.2 | 卡片预览的 Markdown 渲染 | MIT |
-| [DOMPurify](https://github.com/cure53/DOMPurify) | 3.1.6 | 渲染结果 XSS 过滤 | Apache-2.0 / MPL-2.0 |
-
-Go 侧无第三方依赖；托盘图标、消息框、单实例、打开浏览器等全部通过标准库 `syscall` 直接调用 Win32 API。
+- **Single-file distribution** — the front end is embedded with `go:embed`, so copying one exe is
+  enough; there is no adjacent resource folder to lose.
+- **Zero Go dependencies** — tray icon, message boxes, single-instance mutex and “open in browser”
+  are implemented against Win32 through the standard library, avoiding CGO and dependency churn.
+- **Portable data over a database** — human-readable JSON you can fix by hand or sync with any cloud
+  drive; atomic writes, snapshots and corruption recovery keep it safe.
+- **English is the base language** — backend errors are English by default (good for API users and
+  logs) and translated at the HTTP boundary, while the UI keeps all translations in one JS file.
 
 ---
 
-## 常见问题
+## Third-party components
 
-**Q：双击后没有黑窗口，怎么知道程序在跑？**
-看屏幕右下角托盘区的 💡 图标（Windows 11 可能把它收进「显示隐藏的图标」，可以拖出来固定）。日志在 `data\logs\inspirationer.log`。
+The front end bundles three libraries locally (no CDN at runtime):
 
-**Q：怎么退出？**
-右键托盘图标 → 退出。也可以用 `inspirationer-console.exe` 或 `-console` 启动后按 `Ctrl+C`，或在任务管理器里结束进程（数据已实时落盘，不会丢）。
+| Component | Version | Purpose | License |
+|-----------|---------|---------|---------|
+| [EasyMDE](https://github.com/Ionaru/easy-markdown-editor) | 2.18.0 | Markdown editor (bundles CodeMirror + marked) | MIT |
+| [marked](https://github.com/markedjs/marked) | 12.0.2 | Markdown rendering for card previews | MIT |
+| [DOMPurify](https://github.com/cure53/DOMPurify) | 3.1.6 | Sanitising rendered Markdown | Apache-2.0 / MPL-2.0 |
 
-**Q：浏览器没自动打开？**
-① 看日志里有没有"已请求系统默认浏览器打开"；② 手动访问日志里的地址即可；③ 用 `-open=false` 启动时不会打开，这是预期的。
-
-**Q：托盘图标注册失败怎么办？（日志出现 `Shell_NotifyIcon ... Access is denied`）**
-这是运行环境的完整性级别限制：Windows 的 UIPI 规则不允许**低完整性级别**进程向资源管理器注册托盘图标。日志里的诊断会写明 `完整性级别=Low（低）`。常见于沙箱 / 受限容器 / 某些以低权限令牌拉起的自动化环境；**在普通桌面双击运行不会有这个问题**（日志会显示 `托盘图标已就绪`）。程序在这种情况下会自动打开日志控制台并提示，服务本身不受影响。
-
-**Q：端口被占用？**
-日志里会打印实际地址（自动顺延端口）；也可以用 `-addr 127.0.0.1:9000` 指定。
-
-**Q：能局域网访问吗？**
-`-addr 0.0.0.0:8420` 即可，但注意本工具**没有登录鉴权**（定位是本机单用户工具），暴露到公网前请自行加反向代理与认证。
-
-**Q：数据会丢吗？**
-每次改动都立即原子写盘；`data/backups/` 保留 30 份本地快照；文件损坏时启动会自动回退到最近可用快照。再配合 WebDAV 自动备份基本无风险。
-
-**Q：快捷键没反应？**
-① 浏览器窗口需处于聚焦状态；② 部分浏览器会把 `Alt` 组合用于菜单，若冲突请改成 `Alt+Shift+X` 之类；③ 有弹窗打开时只响应弹窗内快捷键（这是刻意的，避免误操作），`Esc` 可随时关闭弹窗。
-
-**Q：AI 打标要花钱吗？**
-取决于你选的服务；用 Ollama 本地模型可以完全免费离线。不做任何操作时不会调用 AI。
-
-**Q：怎么完全重置？**
-右键托盘 → 退出，然后删除 `data/` 目录，重新启动即可。
+The Go side has no third-party dependencies; the tray icon, message boxes, single-instance check and
+browser launching all call Win32 APIs directly through `syscall`.
 
 ---
 
-## 许可证
+## FAQ
 
-本项目采用 **Apache License 2.0**，见 [LICENSE](LICENSE)。
+**Q: I double-clicked it — no console window appeared. Is it running?**
+Look for the 💡 icon in the system tray (bottom-right). On Windows 11 it may be tucked into “Show
+hidden icons” — drag it out to pin it. The log is at `data\logs\inspirationer.log`.
 
-第三方前端组件的许可见上文[第三方组件](#第三方组件)（MIT / Apache-2.0 / MPL-2.0），
-它们以未修改的原始形式内置于 `web/vendor/`。
+**Q: How do I quit it?**
+Right-click the tray icon → Quit. Alternatively start it with `inspirationer-console.exe` or
+`-console` and press `Ctrl+C`, or end the process from Task Manager (data is already on disk).
+
+**Q: The browser did not open.**
+Check the log for “asked the default browser to open”; you can always visit the address manually.
+With `-open=false` it is intentional.
+
+**Q: Tray registration failed (`Shell_NotifyIcon … Access is denied`).**
+That is an integrity-level restriction: Windows UIPI does not let a **low-integrity** process
+register a tray icon with Explorer. The log spells it out (`integrity=Low`). It happens in
+sandboxes/restricted containers or when something launches the app with a filtered token; on a
+normal desktop double-click you will see `tray icon ready` instead. The app falls back to opening a
+log console and telling you, and the service itself is unaffected.
+
+**Q: The port is busy.**
+The log prints the real address (the app walks up the port range), or pass
+`-addr 127.0.0.1:9000`.
+
+**Q: Can I reach it from another machine?**
+`-addr 0.0.0.0:8420` works, but the app has **no authentication** — put an authenticating reverse
+proxy in front of it before exposing it.
+
+**Q: Will I lose data?**
+Every change is written atomically; `data/backups/` keeps 30 snapshots and a corrupted file is
+recovered from the newest one at startup. Combined with WebDAV backups the risk is negligible.
+
+**Q: Shortcuts do not react.**
+① The browser window must be focused; ② some browsers reserve `Alt` combinations — record something
+like `Alt+Shift+X` instead; ③ while a dialog is open only its own shortcuts are active (by design),
+and `Escape` always closes it.
+
+**Q: Does AI tagging cost money?**
+Depends on the service you pick; a local Ollama model is free and offline. Nothing is sent anywhere
+unless you trigger an AI action.
+
+**Q: How do I start over?**
+Tray → Quit, delete the `data/` folder, start again.
+
+---
+
+## License
+
+Licensed under the **Apache License 2.0** — see [LICENSE](LICENSE).
+
+Third-party front-end licenses are listed under [Third-party components](#third-party-components)
+(MIT / Apache-2.0 / MPL-2.0); those files are bundled unmodified in `web/vendor/`.
