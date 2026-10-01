@@ -385,6 +385,29 @@ curl -X POST http://127.0.0.1:8420/api/snippets \
 .\build.ps1 -Console     # 额外产出 inspirationer-console.exe（带控制台，便于排查）
 .\build.ps1 -Icon        # 重新生成图标与 Windows 资源（需要 python + Pillow + rsrc）
 .\dev.ps1                # 开发模式：前端直接从 web/ 读取，改完刷新浏览器即可（无需重编）
+.\scripts\make-release.ps1   # 构建 + 组装 release/ + 生成可直接上传 GitHub Release 的 zip
+```
+
+> 如果 PowerShell 提示脚本“未进行数字签名”无法运行，见[常见问题](#常见问题)。
+
+**打包发布**
+
+```powershell
+.\scripts\make-release.ps1            # 先构建再打包
+.\scripts\make-release.ps1 -SkipBuild # 只用现有 exe 打包
+```
+
+`release/` 会变成一个可以直接上传的完整发布包：
+
+```
+release/
+├── inspirationer.exe                            主程序（GUI、托盘、无控制台窗口）
+├── inspirationer-console.exe                    调试版（带控制台）
+├── start-inspirationer.bat                      双击启动（刻意只用 ASCII，避免 cmd 解析问题）
+├── README.md  LICENSE                           文档与许可
+├── HOW-TO-RUN.txt                               三语快速上手
+├── inspirationer-v<版本>-windows-amd64.zip       ← 上传到 GitHub Release 的就是这个
+└── SHA256SUMS.txt                               上面这些文件的校验和
 ```
 
 **测试**（需要先启动服务；AI/WebDAV/UI 测试还需要模拟服务）：
@@ -487,6 +510,19 @@ Go 侧无第三方依赖；托盘图标、消息框、单实例、打开浏览�
 
 **Q：快捷键没反应？**
 ① 浏览器窗口需处于聚焦状态；② 部分浏览器会把 `Alt` 组合用于菜单，若冲突请改成 `Alt+Shift+X` 之类；③ 有弹窗打开时只响应弹窗内快捷键（这是刻意的，避免误操作），`Esc` 可随时关闭弹窗。
+
+**Q：PowerShell 提示 `.ps1` 脚本“未进行数字签名”，不让运行？**
+这是执行策略（execution policy）拦住了未签名脚本。可以绕过执行，或在下载后解除锁定一次：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+# 或者对克隆/解压出来的整份代码解除锁定：
+Get-ChildItem -Recurse -Include *.ps1 | Unblock-File
+```
+
+其实**不用这些脚本也能构建**：[30 秒上手](#30-秒上手) 里给了等价的 `go build` 命令；而
+`启动灵感管理器.bat` 与 `start-inspirationer.bat` 是普通 cmd 批处理，不受 PowerShell 策略影响。
+（`.ps1` 文件都带 UTF-8 BOM，这样 Windows PowerShell 5.1 也能正确读取其中的中文注释。）
 
 **Q：AI 打标要花钱吗？**
 取决于你选的服务；用 Ollama 本地模型可以完全免费离线。不做任何操作时不会调用 AI。

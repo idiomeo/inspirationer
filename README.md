@@ -419,6 +419,30 @@ curl -X POST http://127.0.0.1:8420/api/snippets \
 .\build.ps1 -Console     # also produce inspirationer-console.exe (console, for troubleshooting)
 .\build.ps1 -Icon        # regenerate the icon and Windows resources (needs python + Pillow + rsrc)
 .\dev.ps1                # dev mode: serve the front end from web/, just refresh the browser
+.\scripts\make-release.ps1   # build + assemble release/ + zip ready for a GitHub Release
+```
+
+> If PowerShell refuses to run these scripts ("not digitally signed"), see the
+> [FAQ entry](#q-powershell-says-the-ps1-scripts-are-not-digitally-signed).
+
+**Packaging a release**
+
+```powershell
+.\scripts\make-release.ps1            # build and package
+.\scripts\make-release.ps1 -SkipBuild # package the existing binaries only
+```
+
+`release/` becomes a self-contained, ready-to-upload package:
+
+```
+release/
+├── inspirationer.exe                            the app (GUI, tray, no console window)
+├── inspirationer-console.exe                    console build for troubleshooting
+├── start-inspirationer.bat                      double-click launcher (ASCII-only on purpose)
+├── README.md  LICENSE                           docs and license
+├── HOW-TO-RUN.txt                               trilingual quick start for downloaders
+├── inspirationer-v<version>-windows-amd64.zip   ← upload this to a GitHub Release
+└── SHA256SUMS.txt                               checksums for the artifacts above
 ```
 
 **Tests** (start the server first; the AI/WebDAV/UI suites also need the mock services):
@@ -543,6 +567,21 @@ recovered from the newest one at startup. Combined with WebDAV backups the risk 
 ① The browser window must be focused; ② some browsers reserve `Alt` combinations — record something
 like `Alt+Shift+X` instead; ③ while a dialog is open only its own shortcuts are active (by design),
 and `Escape` always closes it.
+
+**Q: PowerShell says the `.ps1` scripts are "not digitally signed".**
+Your execution policy blocks unsigned scripts. Run them in a bypassed session, or unblock the files
+once after downloading:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+# or, for a cloned/downloaded copy:
+Get-ChildItem -Recurse -Include *.ps1 | Unblock-File
+```
+
+Nothing here *requires* the scripts: the plain `go build` commands are in
+[Quick start](#quick-start), and `启动灵感管理器.bat` / `start-inspirationer.bat` are plain cmd files
+that are never affected by the PowerShell policy. (The `.ps1` files are saved with a UTF-8 BOM so
+that Windows PowerShell 5.1 reads their non-ASCII comments correctly.)
 
 **Q: Does AI tagging cost money?**
 Depends on the service you pick; a local Ollama model is free and offline. Nothing is sent anywhere

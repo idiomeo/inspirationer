@@ -1,4 +1,4 @@
-# 开发模式启动：前端资源直接从 web/ 目录读取，改完 CSS/JS 刷新浏览器即可生效（无需重新编译）
+﻿# 开发模式启动：前端资源直接从 web/ 目录读取，改完 CSS/JS 刷新浏览器即可生效（无需重新编译）
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 

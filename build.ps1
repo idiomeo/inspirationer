@@ -1,4 +1,4 @@
-# 构建灵感管理器
+﻿# 构建灵感管理器
 #
 #   .\build.ps1              # 构建 GUI 版（无控制台窗口，托盘 + 自动打开浏览器）
 #   .\build.ps1 -Console     # 额外构建一个带控制台的调试版 inspirationer-console.exe

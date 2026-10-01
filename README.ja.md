@@ -418,6 +418,30 @@ curl -X POST http://127.0.0.1:8420/api/snippets \
 .\build.ps1 -Console     # also produce inspirationer-console.exe (console, for troubleshooting)
 .\build.ps1 -Icon        # regenerate the icon and Windows resources (needs python + Pillow + rsrc)
 .\dev.ps1                # dev mode: serve the front end from web/, just refresh the browser
+.\scripts\make-release.ps1   # ビルド + release/ の組み立て + GitHub Release にそのまま上げられる zip を生成
+```
+
+> PowerShell がこれらのスクリプトを「デジタル署名されていません」として拒否する場合は、
+> [よくある質問](#よくある質問)を参照してください。
+
+**リリースのパッケージング**
+
+```powershell
+.\scripts\make-release.ps1            # ビルドしてからパッケージング
+.\scripts\make-release.ps1 -SkipBuild # 既存の exe だけでパッケージング
+```
+
+`release/` はそのままアップロードできる自己完結したパッケージになります：
+
+```
+release/
+├── inspirationer.exe                            本体（GUI、タスクトレイ、コンソールウィンドウなし）
+├── inspirationer-console.exe                    トラブルシューティング用のコンソール版
+├── start-inspirationer.bat                      ダブルクリックで起動（意図的に ASCII のみ）
+├── README.md  LICENSE                           ドキュメントとライセンス
+├── HOW-TO-RUN.txt                               ダウンロードした人向けの 3 言語クイックスタート
+├── inspirationer-v<version>-windows-amd64.zip   ← GitHub Release にアップロードするのはこれ
+└── SHA256SUMS.txt                               上記ファイルのチェックサム
 ```
 
 **テスト**（先にサーバーを起動してください。AI / WebDAV / UI のスイートにはモックサービスも必要です）：
@@ -542,6 +566,20 @@ Go 側にサードパーティ依存はありません。タスクトレイの�
 ① ブラウザのウィンドウがフォーカスされている必要があります。② 一部のブラウザは `Alt` の組み合わせを
 予約しているため、代わりに `Alt+Shift+X` のような組み合わせを記録してください。③ ダイアログが開いている間は
 そのダイアログ自身のショートカットだけが有効です（意図的な仕様）。`Escape` でいつでも閉じられます。
+
+**Q：PowerShell で .ps1 スクリプトが「デジタル署名されていません」と表示される**
+実行ポリシーが未署名のスクリプトを止めています。ポリシーを回避したセッションで実行するか、ダウンロード後に一度ファイルのブロックを解除してください：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+# or, for a cloned/downloaded copy:
+Get-ChildItem -Recurse -Include *.ps1 | Unblock-File
+```
+
+スクリプトがなくても構築できます：同等の `go build` コマンドは
+[30 秒で使い始める](#30-秒で使い始める)にあり、`启动灵感管理器.bat` と `start-inspirationer.bat` は
+通常の cmd バッチファイルなので PowerShell のポリシーの影響を受けません。（`.ps1` ファイルは UTF-8 BOM 付きで
+保存されているため、Windows PowerShell 5.1 でも日本語や中国語のコメントを正しく読み取れます。）
 
 **Q：AI のタグ付けは有料ですか？**
 選んだサービスによります。ローカルの Ollama モデルなら無料でオフラインです。AI の操作を実行しない限り、

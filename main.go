@@ -35,7 +35,7 @@ import (
 var embeddedWeb embed.FS
 
 const (
-	version   = "1.1.0"
+	version   = "1.2.0"
 	mutexName = `Local\Inspirationer-Singleton`
 	logMaxLen = 4 << 20 // 单个日志文件上限 4MB
 )
