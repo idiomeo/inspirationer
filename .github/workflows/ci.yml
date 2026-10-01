@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+          cache: false
+
+      - name: gofmt 检查
+        shell: pwsh
+        run: |
+          $unformatted = gofmt -l .
+          if ($unformatted) {
+            Write-Host "以下文件未按 gofmt 格式化：" -ForegroundColor Red
+            $unformatted | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          Write-Host "gofmt 检查通过"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -v
+
+      - name: 构建（GUI 版，无控制台窗口）
+        run: go build -trimpath -ldflags "-s -w -H=windowsgui" -o inspirationer.exe .
+
+      - name: 归档可执行文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: inspirationer-windows-amd64
+          path: inspirationer.exe
+          if-no-files-found: error
+          retention-days: 14
