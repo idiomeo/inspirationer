@@ -63,21 +63,24 @@ jobs:
                    (Resolve-Path release/SHA256SUMS.txt).Path
           Write-Host "目标 Release：$tag"
 
+          # 附注标签的说明就是我们的发布说明（gh release edit 不支持 --notes-from-tag，这里直接取文本）
+          $notes = ((git tag -l --format='%(contents)' "$tag") -join "`n").Trim()
+          if ($notes) { Write-Host "使用附注标签的说明作为正文（$($notes.Length) 字符）" }
+          else { Write-Host "标签没有附注说明，改用 --generate-notes" }
+
           # 已存在（例如手动重跑）时只更新，避免任务因 "already exists" 失败
           gh release view "$tag" *> $null
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "Release 已存在：更新附件，并用附注标签的说明刷新正文"
+            Write-Host "Release 已存在：更新附件与正文"
             gh release upload "$tag" @files --clobber
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            gh release edit "$tag" --notes-from-tag 2>$null
-            if ($LASTEXITCODE -ne 0) { Write-Host "标签没有附注说明，保留现有正文" }
-            exit 0
+            if ($notes) { gh release edit "$tag" --notes $notes }
+            exit $LASTEXITCODE
           }
 
-          # 优先使用附注标签的说明作为正文；轻量标签没有说明时回退到自动生成的变更记录
-          gh release create "$tag" --title "Inspirationer $tag" --notes-from-tag @files
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "标签说明不可用，改用 --generate-notes"
+          if ($notes) {
+            gh release create "$tag" --title "Inspirationer $tag" --notes $notes @files
+          } else {
             gh release create "$tag" --title "Inspirationer $tag" --generate-notes @files
           }
           exit $LASTEXITCODE
