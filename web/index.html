@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>灵感管理器 · Inspirationer</title>
+<link rel="stylesheet" href="/vendor/easymde.min.css">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💡</text></svg>">
+</head>
+<body>
+<div class="app">
+  <!-- ============================ 侧栏 ============================ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-icon">💡</span>
+      <div>
+        <div class="brand-title">灵感管理器</div>
+        <div class="brand-sub">Inspirationer <span id="appVersion"></span></div>
+      </div>
+    </div>
+
+    <button id="btnNewSnippet" class="btn primary block big">
+      <span>＋ 新建灵感</span><kbd data-sc="newSnippet">Alt+N</kbd>
+    </button>
+
+    <nav class="nav" id="mainNav">
+      <button class="nav-item" data-view="all"><span class="ni-icon">📚</span><span class="ni-label">全部灵感</span><span class="ni-count" id="countAll">0</span></button>
+      <button class="nav-item" data-view="uncategorized"><span class="ni-icon">📭</span><span class="ni-label">未分类</span><span class="ni-count" id="countUncat">0</span></button>
+      <button class="nav-item" data-view="pinned"><span class="ni-icon">📌</span><span class="ni-label">置顶</span><span class="ni-count" id="countPinned">0</span></button>
+      <button class="nav-item" data-view="archived"><span class="ni-icon">🗄️</span><span class="ni-label">归档</span><span class="ni-count" id="countArchived">0</span></button>
+    </nav>
+
+    <div class="side-section">
+      <div class="side-head">
+        <h4>分类</h4>
+        <button id="btnNewCategory" class="icon-btn" title="新建分类">＋</button>
+      </div>
+      <div id="catList" class="cat-list"></div>
+    </div>
+
+    <div class="side-section grow">
+      <div class="side-head">
+        <h4>标签</h4>
+        <button id="btnNewTag" class="icon-btn" title="新建标签">＋</button>
+      </div>
+      <div id="tagList" class="tag-list"></div>
+    </div>
+
+    <div class="side-footer">
+      <button id="btnOpenSettings" class="btn ghost block">
+        <span>⚙️ 设置</span><kbd data-sc="openSettings">Alt+O</kbd>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================ 主区 ============================ -->
+  <main class="main">
+    <header class="toolbar">
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input id="searchInput" type="search" placeholder="搜索灵感…（标题 / 正文 / 标签）" autocomplete="off">
+        <select id="searchMode" title="搜索范围">
+          <option value="all">全文匹配</option>
+          <option value="title">仅标题</option>
+          <option value="content">仅正文</option>
+        </select>
+        <button id="btnClearSearch" class="icon-btn" title="清空搜索">✕</button>
+      </div>
+      <div class="toolbar-right">
+        <button id="btnAiTag" class="btn ghost" title="用 AI 为选中的灵感自动生成标签与分类">🤖 AI 自动打标</button>
+        <button id="btnPipeline" class="btn ghost" title="逐条流水线打标">⚡ 流水线打标</button>
+        <select id="sortSelect" title="排序">
+          <option value="updated">最近更新</option>
+          <option value="created">最近创建</option>
+          <option value="title">按标题</option>
+        </select>
+      </div>
+    </header>
+
+    <div class="subbar">
+      <div class="view-title">
+        <h2 id="viewTitle">全部灵感</h2>
+        <span class="view-count" id="viewCount">0 条</span>
+        <span class="search-hint" id="searchHint" hidden></span>
+      </div>
+      <label class="check-all">
+        <input type="checkbox" id="checkAllVisible"><span>全选</span><kbd data-sc="selectAll">Alt+A</kbd>
+      </label>
+    </div>
+
+    <div class="bulkbar" id="bulkBar" hidden>
+      <span class="bulk-count" id="bulkCount">已选 0 条</span>
+      <span class="bulk-sep"></span>
+      <select id="bulkCategory" title="批量设置分类"><option value="">— 设置分类 —</option></select>
+      <button id="btnBulkApplyCategory" class="btn tiny">应用</button>
+      <span class="bulk-sep"></span>
+      <input id="bulkTagInput" list="tagSuggest" placeholder="输入标签名" class="tiny-input">
+      <button id="btnBulkAddTag" class="btn tiny">＋ 加标签</button>
+      <span class="bulk-sep"></span>
+      <button id="btnBulkArchive" class="btn tiny">归档</button>
+      <button id="btnBulkUnarchive" class="btn tiny">取消归档</button>
+      <span class="bulk-sep"></span>
+      <button id="btnAiTagSel" class="btn tiny accent">🤖 AI 打标</button>
+      <button id="btnPipelineSel" class="btn tiny accent">⚡ 流水线</button>
+      <button id="btnBulkDelete" class="btn tiny danger">🗑 删除</button>
+      <button id="btnClearSelection" class="btn tiny ghost">清空选择</button>
+    </div>
+
+    <section id="grid" class="grid"></section>
+    <div id="emptyState" class="empty" hidden>
+      <div class="empty-emoji">🌱</div>
+      <h3>还没有灵感</h3>
+      <p>点击左上角「＋ 新建灵感」，或按 <kbd data-sc="newSnippet">Alt+N</kbd> 随手记下第一个想法。</p>
+    </div>
+  </main>
+</div>
+
+<!-- ============================ 编辑器 ============================ -->
+<div class="modal-backdrop" id="editorModal" hidden>
+  <div class="modal wide">
+    <header class="modal-head">
+      <h3 id="edHeading">新建灵感</h3>
+      <div class="modal-head-actions">
+        <button id="btnEdAiTitle" class="btn tiny ghost" title="用 AI 根据正文生成标题">✨ AI 生成标题</button>
+        <button class="icon-btn" data-close-modal title="关闭">✕</button>
+      </div>
+    </header>
+    <div class="modal-body">
+      <div class="field">
+        <label for="edTitle">标题</label>
+        <input id="edTitle" type="text" placeholder="留空则自动生成：已配置 AI 时由 AI 总结，否则截取正文前 N 个字">
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label for="edCategory">分类</label>
+          <select id="edCategory"></select>
+        </div>
+        <div class="field grow">
+          <label for="edTagInput">标签</label>
+          <div class="chips-input" id="edTagsBox">
+            <div class="chips" id="edTagChips"></div>
+            <input id="edTagInput" list="tagSuggest" placeholder="回车添加，可新建" autocomplete="off">
+          </div>
+        </div>
+      </div>
+      <div class="field">
+        <label>正文（Markdown）</label>
+        <textarea id="edContent"></textarea>
+      </div>
+      <div class="editor-meta" id="edMeta"></div>
+    </div>
+    <footer class="modal-foot">
+      <button id="btnEdDelete" class="btn danger ghost left">🗑 删除</button>
+      <button id="btnEdCancel" class="btn ghost">取消</button>
+      <button id="btnEdSave" class="btn primary">保存 <kbd data-sc="saveSnippet">Alt+S</kbd></button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 设置 ============================ -->
+<div class="modal-backdrop" id="settingsModal" hidden>
+  <div class="modal wide tall">
+    <header class="modal-head">
+      <h3>设置</h3>
+      <button class="icon-btn" data-close-modal>✕</button>
+    </header>
+    <div class="modal-body settings-body">
+      <nav class="tabs">
+        <button class="tab active" data-tab="ai">🤖 AI</button>
+        <button class="tab" data-tab="webdav">☁️ WebDAV 备份</button>
+        <button class="tab" data-tab="shortcuts">⌨️ 快捷键</button>
+        <button class="tab" data-tab="ui">🎨 外观</button>
+        <button class="tab" data-tab="data">💾 数据</button>
+      </nav>
+
+      <div class="tab-panels">
+        <!-- AI -->
+        <section class="tab-panel active" data-panel="ai">
+          <label class="switch-row">
+            <input type="checkbox" id="aiEnabled">
+            <span><b>启用 AI 功能</b><small>关闭后，标题将截取正文前 N 个字；AI 打标功能不可用</small></span>
+          </label>
+          <div class="field">
+            <label for="aiPreset">服务预设</label>
+            <select id="aiPreset">
+              <option value="">— 选择预设（可手动修改下方任意项）—</option>
+              <option value="https://api.openai.com/v1|gpt-4o-mini">OpenAI · gpt-4o-mini</option>
+              <option value="https://api.deepseek.com/v1|deepseek-chat">DeepSeek · deepseek-chat</option>
+              <option value="https://api.moonshot.cn/v1|moonshot-v1-8k">Moonshot Kimi · moonshot-v1-8k</option>
+              <option value="https://dashscope.aliyuncs.com/compatible-mode/v1|qwen-plus">阿里通义 · qwen-plus</option>
+              <option value="https://open.bigmodel.cn/api/paas/v4|glm-4-flash">智谱 GLM · glm-4-flash</option>
+              <option value="http://127.0.0.1:11434/v1|qwen2.5:7b">Ollama 本地 · qwen2.5:7b</option>
+              <option value="http://127.0.0.1:3000/v1|gpt-3.5-turbo">One-API 本地网关</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div class="field grow">
+              <label for="aiBaseUrl">API Base URL</label>
+              <input id="aiBaseUrl" type="text" placeholder="https://api.openai.com/v1">
+            </div>
+            <div class="field grow">
+              <label for="aiModel">模型</label>
+              <input id="aiModel" type="text" placeholder="gpt-4o-mini">
+            </div>
+          </div>
+          <div class="field">
+            <label for="aiApiKey">API Key</label>
+            <input id="aiApiKey" type="password" placeholder="sk-…（仅保存在本地）">
+            <small class="hint">支持任何兼容 OpenAI Chat Completions 的服务；Key 只写入本机数据目录。</small>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="aiTemp">Temperature</label><input id="aiTemp" type="number" step="0.1" min="0" max="2"></div>
+            <div class="field"><label for="aiMaxTokens">Max Tokens</label><input id="aiMaxTokens" type="number" min="64" max="32000"></div>
+            <div class="field"><label for="aiTimeout">超时（秒）</label><input id="aiTimeout" type="number" min="5" max="600"></div>
+          </div>
+          <div class="row-actions">
+            <button id="btnAiTest" class="btn ghost">🔌 测试连接</button>
+            <span id="aiTestResult" class="test-result"></span>
+          </div>
+        </section>
+
+        <!-- WebDAV -->
+        <section class="tab-panel" data-panel="webdav">
+          <label class="switch-row">
+            <input type="checkbox" id="davEnabled">
+            <span><b>启用自动备份</b><small>服务运行期间按下方间隔自动上传整库备份到 WebDAV</small></span>
+          </label>
+          <div class="field">
+            <label for="davUrl">WebDAV 地址</label>
+            <input id="davUrl" type="text" placeholder="https://dav.example.com/remote.php/dav/files/用户名/">
+            <small class="hint">支持 坚果云 / Nextcloud / 群晖 / Alist / 通用 WebDAV。</small>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="davUser">用户名</label><input id="davUser" type="text" autocomplete="off"></div>
+            <div class="field"><label for="davPass">密码 / 应用密码</label><input id="davPass" type="password" autocomplete="new-password"></div>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="davDir">远端目录</label><input id="davDir" type="text" placeholder="inspirationer"></div>
+            <div class="field"><label for="davInterval">自动备份间隔（分钟）</label><input id="davInterval" type="number" min="5" max="10080"></div>
+            <div class="field"><label for="davKeep">远端最多保留份数</label><input id="davKeep" type="number" min="1" max="200"></div>
+          </div>
+          <div class="row-actions">
+            <button id="btnDavTest" class="btn ghost">🔌 测试连接</button>
+            <button id="btnDavBackup" class="btn primary">☁️ 立即备份</button>
+            <button id="btnDavRefresh" class="btn ghost">📥 从远端恢复</button>
+            <button id="btnDavLocalSnapshot" class="btn ghost">💾 创建本地快照</button>
+          </div>
+          <div id="davStatus" class="test-result block"></div>
+          <div id="davFiles" class="remote-list" hidden></div>
+        </section>
+
+        <!-- 快捷键 -->
+        <section class="tab-panel" data-panel="shortcuts">
+          <p class="hint">点击输入框后直接按下组合键即可录制。默认使用 <b>Alt</b> 组合，避免与浏览器快捷键冲突。</p>
+          <div id="shortcutList" class="shortcut-list"></div>
+          <div class="row-actions"><button id="btnShortcutReset" class="btn ghost">恢复默认快捷键</button></div>
+        </section>
+
+        <!-- 外观 -->
+        <section class="tab-panel" data-panel="ui">
+          <div class="field-row">
+            <div class="field"><label for="uiTheme">主题</label>
+              <select id="uiTheme"><option value="dark">深色</option><option value="light">浅色</option></select>
+            </div>
+            <div class="field"><label for="uiTitleRunes">自动标题截取字数</label><input id="uiTitleRunes" type="number" min="2" max="80"></div>
+          </div>
+          <label class="switch-row">
+            <input type="checkbox" id="uiCardPreview">
+            <span><b>卡片显示 Markdown 预览</b><small>关闭后卡片只显示纯文本摘要</small></span>
+          </label>
+          <label class="switch-row">
+            <input type="checkbox" id="uiConfirmDelete">
+            <span><b>删除前二次确认</b></span>
+          </label>
+        </section>
+
+        <!-- 数据 -->
+        <section class="tab-panel" data-panel="data">
+          <div class="field">
+            <label>数据目录（本地持久化）</label>
+            <input id="dataDirText" type="text" readonly>
+          </div>
+          <div class="row-actions">
+            <button id="btnExport" class="btn ghost">⬇️ 导出整库备份</button>
+            <button id="btnSnapshot2" class="btn ghost">💾 立即本地快照</button>
+          </div>
+          <div class="field">
+            <label for="importFile">导入备份文件</label>
+            <input id="importFile" type="file" accept="application/json,.json">
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="importMode">导入方式</label>
+              <select id="importMode">
+                <option value="merge">合并（保留现有数据，ID 相同则覆盖）</option>
+                <option value="replace">覆盖（清空后完全替换）</option>
+              </select>
+            </div>
+            <div class="field"><label>&nbsp;</label><button id="btnImport" class="btn primary">⬆️ 开始导入</button></div>
+          </div>
+          <p class="hint">所有数据都以 JSON 保存在数据目录中：<code>snippets.json</code>、<code>tags.json</code>、<code>categories.json</code>、<code>settings.json</code>，<code>backups/</code> 下保留最近 30 份自动快照。</p>
+        </section>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn ghost" data-close-modal>关闭</button>
+      <button id="btnSaveSettings" class="btn primary">保存设置</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ AI 打标结果 ============================ -->
+<div class="modal-backdrop" id="aiModal" hidden>
+  <div class="modal wide tall">
+    <header class="modal-head">
+      <h3>🤖 AI 自动标签与分类</h3>
+      <button class="icon-btn" data-close-modal>✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="row-actions between">
+        <div>
+          <label class="inline">标签应用方式
+            <select id="aiMode">
+              <option value="merge">追加到现有标签</option>
+              <option value="replace">替换现有标签</option>
+            </select>
+          </label>
+        </div>
+        <div class="row-actions">
+          <span class="test-result" id="aiStatus"></span>
+          <button id="btnAiCheckAll" class="btn tiny ghost">全选建议</button>
+          <button id="btnAiUncheckAll" class="btn tiny ghost">全不选</button>
+        </div>
+      </div>
+      <div id="aiList" class="ai-list"></div>
+    </div>
+    <footer class="modal-foot">
+      <button class="btn ghost" data-close-modal>取消</button>
+      <button id="btnAiApply" class="btn primary">应用勾选的建议</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 流水线打标 ============================ -->
+<div class="modal-backdrop" id="pipelineModal" hidden>
+  <div class="modal wide tall">
+    <header class="modal-head">
+      <h3>⚡ 流水线打标 <span class="pipe-progress" id="pipeProgress"></span></h3>
+      <button class="icon-btn" data-close-modal>✕</button>
+    </header>
+    <div class="modal-body pipeline-body">
+      <div class="pipe-main">
+        <h4 class="pipe-title" id="pipeTitle"></h4>
+        <div class="pipe-content markdown" id="pipeContent"></div>
+      </div>
+      <aside class="pipe-side">
+        <div class="field">
+          <label for="pipeCategory">分类</label>
+          <select id="pipeCategory"></select>
+        </div>
+        <div class="field">
+          <label>标签（点击切换 / 输入新建）</label>
+          <input id="pipeTagInput" list="tagSuggest" placeholder="输入后回车新建并选中" class="small-input">
+          <div id="pipeTagList" class="tag-picker"></div>
+        </div>
+        <div class="pipe-hint">当前已选标签：<span id="pipeTagCount">0</span></div>
+      </aside>
+    </div>
+    <footer class="modal-foot">
+      <button id="btnPipeStop" class="btn ghost left">结束流水线</button>
+      <button id="btnPipePrev" class="btn ghost">← 上一条</button>
+      <button id="btnPipeSkip" class="btn ghost">跳过</button>
+      <button id="btnPipeSaveNext" class="btn primary">保存并进入下一条 <kbd data-sc="pipelineNext">Alt+J</kbd></button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 标签/分类编辑 ============================ -->
+<div class="modal-backdrop" id="tagEditorModal" hidden>
+  <div class="modal">
+    <header class="modal-head">
+      <h3 id="tagEditorHeading">编辑标签</h3>
+      <button class="icon-btn" data-close-modal>✕</button>
+    </header>
+    <div class="modal-body">
+      <div class="field">
+        <label for="tagNameInput">名称</label>
+        <input id="tagNameInput" type="text" placeholder="例如：产品设计">
+      </div>
+      <div class="field">
+        <label>颜色</label>
+        <div class="palette" id="colorPalette"></div>
+        <div class="row-actions">
+          <input id="tagColorInput" type="color" value="#3b82f6">
+          <span class="hint">也可以直接取色</span>
+        </div>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <button id="btnTagDelete" class="btn danger ghost left">🗑 删除</button>
+      <button class="btn ghost" data-close-modal>取消</button>
+      <button id="btnTagSave" class="btn primary">保存</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================ 确认框 ============================ -->
+<div class="modal-backdrop" id="confirmModal" hidden>
+  <div class="modal narrow">
+    <header class="modal-head"><h3 id="confirmTitle">确认</h3></header>
+    <div class="modal-body"><p id="confirmText"></p></div>
+    <footer class="modal-foot">
+      <button class="btn ghost" id="btnConfirmNo">取消</button>
+      <button class="btn primary" id="btnConfirmYes">确定</button>
+    </footer>
+  </div>
+</div>
+
+<datalist id="tagSuggest"></datalist>
+<div id="toasts" class="toasts"></div>
+
+<script src="/vendor/easymde.min.js"></script>
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

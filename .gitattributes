@@ -1,0 +1,21 @@
+# 统一换行与二进制标记，避免跨平台 diff 噪音
+* text=auto
+
+*.go        text eol=lf
+*.mod       text eol=lf
+*.md        text eol=lf
+*.js        text eol=lf
+*.mjs       text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.json      text eol=lf
+*.py        text eol=lf
+*.manifest  text eol=lf
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+
+# 二进制资源，永不转换
+*.png       binary
+*.ico       binary
+*.syso      binary
+*.exe       binary
