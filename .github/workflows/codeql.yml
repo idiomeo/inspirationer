@@ -1,0 +1,74 @@
+name: CodeQL
+
+# 静态安全扫描（CodeQL）。
+#
+# 注意：CodeQL 在私有仓库需要 GitHub Advanced Security（付费），对公开仓库免费。
+# 因此这里先用 REST API 检查仓库可见性：仍是 private 就跳过分析步骤（任务显示成功而不是失败），
+# 仓库转为 public 之后无需改动任何配置即自动生效。
+#
+# 另外请不要同时开启 Settings → Code security 里的 "CodeQL default setup"：
+# 默认配置与这份工作流（advanced setup）不能共存，二选一即可。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 3 * * 1' # 每周一 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: 分析 ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # 上传扫描结果
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [go, javascript-typescript]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.20'
+          cache: false
+
+      - name: 检查仓库可见性
+        id: visibility
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          vis=$(gh api "repos/${{ github.repository }}" --jq .visibility)
+          echo "value=$vis" >> "$GITHUB_OUTPUT"
+          echo "仓库可见性：$vis"
+
+      - name: 初始化 CodeQL
+        if: steps.visibility.outputs.value == 'public'
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: 自动构建（Go 会执行 go build ./...）
+        if: steps.visibility.outputs.value == 'public'
+        uses: github/codeql-action/autobuild@v3
+
+      - name: 执行分析并上传结果
+        if: steps.visibility.outputs.value == 'public'
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+      - name: 跳过说明
+        if: steps.visibility.outputs.value != 'public'
+        run: |
+          echo "::notice::仓库当前不是 public（CodeQL 需要公开仓库或 GitHub Advanced Security），本次跳过静态分析。"

@@ -346,6 +346,9 @@ data/
   authentication in front of it.
 - The test scripts only contain throwaway credentials (`mock-user` / `mock-pass`,
   `mock-api-key`) that point at local mock servers on `127.0.0.1`.
+- **Reporting a vulnerability:** see [SECURITY.md](SECURITY.md) — please use GitHub's private
+  vulnerability reporting (the **Security** tab) instead of a public issue.
+- Once this repository is public, **CodeQL** static analysis runs in CI on every push to `main`.
 
 ---
 

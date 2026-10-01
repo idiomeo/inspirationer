@@ -41,3 +41,6 @@ func (t *Tray) Ready() bool { return false }
 
 // Stop 在非 Windows 系统上无操作。
 func (t *Tray) Stop() {}
+
+// SetDebugLogger 与 Windows 实现保持同样的签名；非 Windows 平台没有托盘细节日志，因此无操作。
+func (t *Tray) SetDebugLogger(fn func(format string, args ...interface{})) {}
